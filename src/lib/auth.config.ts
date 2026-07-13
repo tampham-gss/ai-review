@@ -37,13 +37,19 @@ export const authConfig = {
       const isPublic =
         pathname === "/login" ||
         pathname === "/register" ||
+        pathname === "/forgot-password" ||
         pathname.startsWith("/api/auth");
 
       if (!isLoggedIn && !isPublic) {
         return false;
       }
 
-      if (isLoggedIn && (pathname === "/login" || pathname === "/register")) {
+      if (
+        isLoggedIn &&
+        (pathname === "/login" ||
+          pathname === "/register" ||
+          pathname === "/forgot-password")
+      ) {
         return Response.redirect(new URL("/dashboard", request.nextUrl));
       }
 

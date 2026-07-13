@@ -202,11 +202,26 @@ export async function getUserAiProviders(userId: string): Promise<AiProviderConf
   }));
 }
 
-export async function recordTokenUsage(providerId: string, tokens: number) {
-  await prisma.aiProvider.update({
+export async function recordTokenUsage(
+  providerId: string,
+  tokens: number,
+  action: "validate" | "fix" = "validate",
+) {
+  const provider = await prisma.aiProvider.update({
     where: { id: providerId },
     data: { tokensUsed: { increment: tokens } },
   });
+
+  if (tokens > 0) {
+    await prisma.tokenUsageLog.create({
+      data: {
+        userId: provider.userId,
+        providerId,
+        tokens,
+        action,
+      },
+    });
+  }
 }
 
 function isProviderExhausted(provider: AiProviderConfig): boolean {
@@ -523,7 +538,7 @@ ${params.fileContent}
 `;
 
   const { text, tokens } = await callAi(provider, VALIDATION_SYSTEM, userPrompt);
-  await recordTokenUsage(provider.id, tokens);
+  await recordTokenUsage(provider.id, tokens, "validate");
   const parsed = parseJson<ValidationAiResult>(text);
   const result = sanitizeValidationReply(parsed, params.fileContent);
   return { result, providerId: provider.id };
@@ -561,7 +576,7 @@ ${params.fileContent}
 `;
 
   const { text, tokens } = await callAi(provider, FIX_SYSTEM, userPrompt);
-  await recordTokenUsage(provider.id, tokens);
+  await recordTokenUsage(provider.id, tokens, "fix");
   const result = parseJson<FixAiResult>(text);
   return { result, providerId: provider.id };
 }

@@ -8,13 +8,19 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toaster";
-import { User } from "lucide-react";
+import { Eye, FileText, User, X } from "lucide-react";
+
+interface ConventionFile {
+  id: string;
+  name: string;
+  content: string;
+}
 
 interface Category {
   id: string;
   name: string;
   level: number;
-  files: Array<{ id: string; name: string; content: string }>;
+  files: ConventionFile[];
   user?: { id: string; name: string | null; email: string };
 }
 
@@ -29,6 +35,10 @@ export default function ConventionsPage() {
   const [addingCategory, setAddingCategory] = useState(false);
   const [addingFile, setAddingFile] = useState(false);
   const [deletingFileId, setDeletingFileId] = useState("");
+  const [previewFile, setPreviewFile] = useState<ConventionFile | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [savingPreview, setSavingPreview] = useState(false);
 
   async function load() {
     try {
@@ -49,6 +59,18 @@ export default function ConventionsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  function openPreview(file: ConventionFile) {
+    setPreviewFile(file);
+    setEditName(file.name);
+    setEditContent(file.content);
+  }
+
+  function closePreview() {
+    setPreviewFile(null);
+    setEditName("");
+    setEditContent("");
+  }
 
   async function addCategory() {
     setAddingCategory(true);
@@ -102,6 +124,39 @@ export default function ConventionsPage() {
     }
   }
 
+  async function savePreview() {
+    if (!previewFile) return;
+    if (!editName.trim() || !editContent.trim()) {
+      toast.error("Tên file và nội dung không được trống");
+      return;
+    }
+
+    setSavingPreview(true);
+    try {
+      const res = await fetch("/api/conventions/files", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: previewFile.id,
+          name: editName.trim(),
+          content: editContent,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Cập nhật thất bại");
+        return;
+      }
+      toast.success("Đã cập nhật file convention");
+      closePreview();
+      await load();
+    } catch {
+      toast.error("Lỗi kết nối khi cập nhật file");
+    } finally {
+      setSavingPreview(false);
+    }
+  }
+
   async function deleteFile(id: string) {
     setDeletingFileId(id);
     try {
@@ -112,6 +167,7 @@ export default function ConventionsPage() {
         return;
       }
       toast.success("Đã xóa file convention");
+      if (previewFile?.id === id) closePreview();
       await load();
     } catch {
       toast.error("Lỗi kết nối khi xóa file");
@@ -124,6 +180,48 @@ export default function ConventionsPage() {
 
   return (
     <div className="space-y-6">
+      {previewFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <Card className="flex max-h-[90vh] w-full max-w-3xl flex-col border-violet-500/30 shadow-2xl">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 shrink-0">
+              <div className="min-w-0">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <FileText className="h-5 w-5 shrink-0 text-cyan-400" />
+                  <span className="truncate">Preview / Sửa convention</span>
+                </CardTitle>
+                <CardDescription className="truncate">
+                  {previewFile.name}
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="icon" onClick={closePreview} aria-label="Đóng">
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="tên-file.md"
+              />
+              <Textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="min-h-0 flex-1 font-mono text-xs"
+                style={{ minHeight: "320px" }}
+              />
+              <div className="flex flex-wrap justify-end gap-2 shrink-0">
+                <Button variant="secondary" onClick={closePreview}>
+                  Đóng
+                </Button>
+                <Button onClick={savePreview} loading={savingPreview}>
+                  {savingPreview ? "Đang lưu..." : "Lưu thay đổi"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <div>
         <h1 className="text-3xl font-bold text-white">Convention Rules</h1>
         <p className="mt-1 text-slate-400">
@@ -190,7 +288,9 @@ export default function ConventionsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Danh sách convention</CardTitle>
-          <CardDescription>Danh sách dài sẽ cuộn trong khung, không kéo dài cả trang.</CardDescription>
+          <CardDescription>
+            Nhấn tên file để xem / sửa nội dung. Danh sách dài cuộn trong khung.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {categories.length === 0 ? (
@@ -215,25 +315,37 @@ export default function ConventionsPage() {
                     </p>
                   )}
                   <div className="max-h-48 space-y-2 overflow-y-auto">
-                    {c.files.map((f) => (
-                      <div
-                        key={f.id}
-                        className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 text-sm"
-                      >
-                        <span className="min-w-0 truncate font-mono text-cyan-300" title={f.name}>
-                          {f.name}
-                        </span>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="shrink-0"
-                          onClick={() => deleteFile(f.id)}
-                          loading={deletingFileId === f.id}
+                    {c.files.length === 0 ? (
+                      <p className="text-xs text-slate-500">Chưa có file.</p>
+                    ) : (
+                      c.files.map((f) => (
+                        <div
+                          key={f.id}
+                          className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 text-sm"
                         >
-                          Xóa
-                        </Button>
-                      </div>
-                    ))}
+                          <button
+                            type="button"
+                            onClick={() => openPreview(f)}
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-90"
+                            title="Xem / sửa nội dung"
+                          >
+                            <Eye className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                            <span className="min-w-0 truncate font-mono text-cyan-300">
+                              {f.name}
+                            </span>
+                          </button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => deleteFile(f.id)}
+                            loading={deletingFileId === f.id}
+                          >
+                            Xóa
+                          </Button>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               ))}

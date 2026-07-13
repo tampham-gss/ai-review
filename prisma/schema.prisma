@@ -15,55 +15,56 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  gitlabConnections GitlabConnection[]
-  aiProviders       AiProvider[]
+  gitlabConnections    GitlabConnection[]
+  aiProviders          AiProvider[]
   conventionCategories ConventionCategory[]
-  reviewSessions    ReviewSession[]
+  reviewSessions       ReviewSession[]
+  tokenUsageLogs       TokenUsageLog[]
 }
 
 model GitlabConnection {
-  id               String   @id @default(cuid())
-  userId           String
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name             String
-  host             String
-  tokenEncrypted   String
-  isDefault        Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  host           String
+  tokenEncrypted String
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@unique([userId, host])
 }
 
 model AiProvider {
-  id                String   @id @default(cuid())
-  userId            String
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider          String
-  apiKeyEncrypted   String
-  baseUrl           String?
-  model             String?
-  isDefault         Boolean  @default(false)
-  isEnabled         Boolean  @default(true)
-  tokenLimit        Int?
-  tokensUsed        Int      @default(0)
-  priority          Int      @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider        String
+  apiKeyEncrypted String
+  baseUrl         String?
+  model           String?
+  isDefault       Boolean  @default(false)
+  isEnabled       Boolean  @default(true)
+  tokenLimit      Int?
+  tokensUsed      Int      @default(0)
+  priority        Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model ConventionCategory {
-  id        String   @id @default(cuid())
+  id        String               @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
   level     Int
   parentId  String?
   parent    ConventionCategory?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children  ConventionCategory[] @relation("CategoryTree")
   files     ConventionFile[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
 }
 
 model ConventionFile {
@@ -77,49 +78,77 @@ model ConventionFile {
 }
 
 model ReviewSession {
-  id                      String   @id @default(cuid())
-  userId                  String
-  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  gitlabHost              String
-  projectId               String
-  projectPath             String
-  mrIid                   Int
-  mrTitle                 String?
-  sourceBranch            String
-  sourceType              String   @default("gitlab")
-  zipData                 Bytes?
-  selectedCategoryIds     String[]
-  aiProviderId            String?
-  status                  String   @default("pending")
-  fixedSourceData         Bytes?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gitlabHost          String
+  projectId           String
+  projectPath         String
+  mrIid               Int
+  mrTitle             String?
+  sourceBranch        String
+  sourceType          String   @default("gitlab")
+  zipData             Bytes?
+  selectedCategoryIds String[]
+  aiProviderId        String?
+  status              String   @default("pending")
+  fixedSourceData     Bytes?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   commentResults CommentValidationResult[]
+
+  @@index([userId, createdAt])
 }
 
 model CommentValidationResult {
-  id                   String        @id @default(cuid())
-  sessionId            String
-  session              ReviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  gitlabDiscussionId   String
-  gitlabNoteId         String?
-  body                 String        @db.Text
-  author               String
-  filePath             String?
-  line                 Int?
-  severity             String?
-  issueCategory        String?
-  verdict              String?
-  confidence           Float?
-  reasonShort          String?       @db.Text
-  reasonDetail         String?       @db.Text
-  suggestedReply       String?       @db.Text
-  fixedFilesJson       String?       @db.Text
-  isResolvedOnGitlab   Boolean       @default(false)
-  pushedToGitlab       Boolean       @default(false)
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  id                 String        @id @default(cuid())
+  sessionId          String
+  session            ReviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  gitlabDiscussionId String
+  gitlabNoteId       String?
+  body               String        @db.Text
+  author             String
+  filePath           String?
+  line               Int?
+  severity           String?
+  issueCategory      String?
+  verdict            String?
+  confidence         Float?
+  reasonShort        String?       @db.Text
+  reasonDetail       String?       @db.Text
+  suggestedReply     String?       @db.Text
+  fixedFilesJson     String?       @db.Text
+  isResolvedOnGitlab Boolean       @default(false)
+  pushedToGitlab     Boolean       @default(false)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   @@unique([sessionId, gitlabDiscussionId])
+  @@index([createdAt])
+}
+
+model TokenUsageLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerId String
+  tokens     Int
+  action     String
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model PasswordResetOtp {
+  id        String    @id @default(cuid())
+  email     String
+  codeHash  String
+  purpose   String    @default("reset")
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email, purpose, createdAt])
 }

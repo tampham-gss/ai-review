@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
+  BarChart3,
   Bot,
   FileCode2,
   GitBranch,
   History,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -18,11 +20,13 @@ import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/stats", label: "Thống kê", icon: BarChart3 },
   { href: "/connect", label: "GitLab", icon: GitBranch },
   { href: "/reviews", label: "Reviews", icon: FileCode2, exact: true },
   { href: "/reviews/history", label: "Lịch sử", icon: History },
   { href: "/settings/conventions", label: "Conventions", icon: Settings },
   { href: "/settings/ai", label: "AI Providers", icon: Bot },
+  { href: "/settings/password", label: "Mật khẩu", icon: KeyRound },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

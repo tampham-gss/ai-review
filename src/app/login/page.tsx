@@ -106,6 +106,11 @@ function LoginForm() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Đang đăng nhập..." : "Đăng nhập"}
           </Button>
+          <p className="text-right text-sm">
+            <Link href="/forgot-password" className="text-violet-300 hover:underline">
+              Quên mật khẩu?
+            </Link>
+          </p>
         </form>
 
         {gitlabOAuthEnabled && (

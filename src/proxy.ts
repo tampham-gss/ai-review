@@ -18,7 +18,8 @@ export async function proxy(request: NextRequest) {
   const isPublic =
     pathname === "/" ||
     pathname === "/login" ||
-    pathname === "/register";
+    pathname === "/register" ||
+    pathname === "/forgot-password";
 
   if (!process.env.AUTH_SECRET) {
     console.error("[proxy] AUTH_SECRET is missing");
@@ -48,7 +49,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isLoggedIn && (pathname === "/login" || pathname === "/register")) {
+  if (
+    isLoggedIn &&
+    (pathname === "/login" ||
+      pathname === "/register" ||
+      pathname === "/forgot-password")
+  ) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

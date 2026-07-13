@@ -7,7 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toaster";
-import { CheckCircle2, ExternalLink } from "lucide-react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  Pencil,
+  PlugZap,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 
 interface Connection {
   id: string;
@@ -24,6 +32,8 @@ export default function ConnectPage() {
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [actionId, setActionId] = useState("");
 
   async function loadConnections() {
     const res = await fetch("/api/gitlab/connections");
@@ -36,12 +46,54 @@ export default function ConnectPage() {
     loadConnections();
   }, []);
 
+  function resetForm() {
+    setEditingId(null);
+    setName("GitLab nội bộ");
+    setHost("https://gitlab.gss-sol.com");
+    setToken("");
+    setMessage("");
+  }
+
+  function startEdit(c: Connection) {
+    setEditingId(c.id);
+    setName(c.name);
+    setHost(c.host);
+    setToken("");
+    setMessage("");
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setMessage("");
 
     try {
+      if (editingId) {
+        const res = await fetch(`/api/gitlab/connections/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            host,
+            ...(token.trim() ? { token: token.trim() } : {}),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          const err = data.error ?? "Cập nhật thất bại";
+          setMessage(err);
+          toast.error(err);
+          return;
+        }
+        const ok = `Đã cập nhật — ${data.user?.username ?? "OK"}`;
+        setMessage(ok);
+        toast.success(ok);
+        setToken("");
+        setEditingId(null);
+        await loadConnections();
+        return;
+      }
+
       const res = await fetch("/api/gitlab/connections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -66,6 +118,69 @@ export default function ConnectPage() {
       setMessage("Lỗi kết nối khi lưu GitLab");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testConnection(id: string) {
+    setActionId(`test-${id}`);
+    try {
+      const res = await fetch(`/api/gitlab/connections/${id}/test`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Test thất bại");
+        return;
+      }
+      toast.success(data.message ?? "Kết nối OK");
+    } catch {
+      toast.error("Lỗi khi test kết nối");
+    } finally {
+      setActionId("");
+    }
+  }
+
+  async function setDefault(id: string) {
+    setActionId(`default-${id}`);
+    try {
+      const res = await fetch(`/api/gitlab/connections/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDefault: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Đặt mặc định thất bại");
+        return;
+      }
+      toast.success("Đã đặt làm kết nối mặc định");
+      await loadConnections();
+    } catch {
+      toast.error("Lỗi khi đặt mặc định");
+    } finally {
+      setActionId("");
+    }
+  }
+
+  async function deleteConnection(id: string) {
+    if (!confirm("Xóa kết nối GitLab này?")) return;
+    setActionId(`delete-${id}`);
+    try {
+      const res = await fetch(`/api/gitlab/connections/${id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Xóa thất bại");
+        return;
+      }
+      toast.success("Đã xóa kết nối");
+      if (editingId === id) resetForm();
+      await loadConnections();
+    } catch {
+      toast.error("Lỗi khi xóa kết nối");
+    } finally {
+      setActionId("");
     }
   }
 
@@ -99,7 +214,10 @@ export default function ConnectPage() {
         <CardContent className="text-sm text-slate-300">
           <ol className="list-decimal space-y-1 pl-5">
             <li>User Settings → Access Tokens</li>
-            <li>Scopes: <Badge>api</Badge> <Badge>read_api</Badge> <Badge>read_repository</Badge></li>
+            <li>
+              Scopes: <Badge>api</Badge> <Badge>read_api</Badge>{" "}
+              <Badge>read_repository</Badge>
+            </li>
             <li>Dán token vào form bên dưới — token được mã hóa khi lưu</li>
           </ol>
         </CardContent>
@@ -107,27 +225,65 @@ export default function ConnectPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>Thêm kết nối PAT</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <div>
+              <CardTitle>
+                {editingId ? "Sửa kết nối" : "Thêm kết nối PAT"}
+              </CardTitle>
+              <CardDescription>
+                {editingId
+                  ? "Để trống token nếu không đổi PAT"
+                  : "Lưu & kiểm tra token trước khi dùng"}
+              </CardDescription>
+            </div>
+            {editingId && (
+              <Button variant="ghost" size="sm" onClick={resetForm}>
+                <X className="h-4 w-4" />
+                Hủy
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSave} className="space-y-3">
-              <Input placeholder="Tên hiển thị" value={name} onChange={(e) => setName(e.target.value)} />
-              <Input placeholder="https://gitlab.gss-sol.com" value={host} onChange={(e) => setHost(e.target.value)} />
               <Input
-                type="password"
-                placeholder="glpat-xxxxxxxx"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
+                placeholder="Tên hiển thị"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 required
               />
+              <Input
+                placeholder="https://gitlab.gss-sol.com"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                required
+              />
+              <Input
+                type="password"
+                placeholder={
+                  editingId ? "Token mới (để trống nếu giữ nguyên)" : "glpat-xxxxxxxx"
+                }
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                required={!editingId}
+              />
               {message && (
-                <p className={`text-sm ${message.includes("thành công") ? "text-emerald-400" : "text-red-400"}`}>
+                <p
+                  className={`text-sm ${
+                    message.toLowerCase().includes("thành công") ||
+                    message.toLowerCase().includes("cập nhật")
+                      ? "text-emerald-400"
+                      : "text-red-400"
+                  }`}
+                >
                   {message}
                 </p>
               )}
               <Button type="submit" loading={saving}>
-                {saving ? "Đang kiểm tra..." : "Lưu & kiểm tra kết nối"}
+                {saving
+                  ? "Đang kiểm tra..."
+                  : editingId
+                    ? "Cập nhật & kiểm tra"
+                    : "Lưu & kiểm tra kết nối"}
               </Button>
             </form>
           </CardContent>
@@ -136,6 +292,7 @@ export default function ConnectPage() {
         <Card>
           <CardHeader>
             <CardTitle>Kết nối hiện có</CardTitle>
+            <CardDescription>Sửa, test lại, đặt mặc định hoặc xóa</CardDescription>
           </CardHeader>
           <CardContent>
             {connections.length === 0 ? (
@@ -145,23 +302,75 @@ export default function ConnectPage() {
                 {connections.map((c) => (
                   <div
                     key={c.id}
-                    className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4"
+                    className={`rounded-xl border p-4 ${
+                      editingId === c.id
+                        ? "border-violet-500/40 bg-violet-500/5"
+                        : "border-white/10 bg-white/[0.02]"
+                    }`}
                   >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{c.name}</p>
-                      <a
-                        href={c.host}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex min-w-0 items-center gap-1 text-sm text-slate-400 hover:text-cyan-300"
-                      >
-                        <span className="truncate">{c.host}</span>
-                        <ExternalLink className="h-3 w-3 shrink-0" />
-                      </a>
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{c.name}</p>
+                        <a
+                          href={c.host}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex min-w-0 items-center gap-1 text-sm text-slate-400 hover:text-cyan-300"
+                        >
+                          <span className="truncate">{c.host}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {c.isDefault && <Badge variant="violet">Mặc định</Badge>}
+                        <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                      </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {c.isDefault && <Badge variant="violet">Mặc định</Badge>}
-                      <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => testConnection(c.id)}
+                        loading={actionId === `test-${c.id}`}
+                      >
+                        {actionId !== `test-${c.id}` && (
+                          <PlugZap className="h-3.5 w-3.5" />
+                        )}
+                        Test
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => startEdit(c)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Sửa
+                      </Button>
+                      {!c.isDefault && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setDefault(c.id)}
+                          loading={actionId === `default-${c.id}`}
+                        >
+                          {actionId !== `default-${c.id}` && (
+                            <Star className="h-3.5 w-3.5" />
+                          )}
+                          Mặc định
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => deleteConnection(c.id)}
+                        loading={actionId === `delete-${c.id}`}
+                      >
+                        {actionId !== `delete-${c.id}` && (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                        Xóa
+                      </Button>
                     </div>
                   </div>
                 ))}

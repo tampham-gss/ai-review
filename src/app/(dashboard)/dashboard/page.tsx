@@ -83,12 +83,17 @@ export default async function DashboardPage() {
             <CardTitle>Bắt đầu nhanh</CardTitle>
             <CardDescription>3 bước để validate review MR</CardDescription>
           </div>
-          <Link href="/reviews">
-            <Button>
-              Tạo review mới
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/stats">
+              <Button variant="secondary">Xem thống kê</Button>
+            </Link>
+            <Link href="/reviews">
+              <Button>
+                Tạo review mới
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-3">
           {[
