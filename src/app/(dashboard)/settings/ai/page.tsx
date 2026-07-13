@@ -339,7 +339,11 @@ export default function AiSettingsPage() {
 
             {showBaseUrl && (
               <Input
-                placeholder="Base URL (vd: https://api.openai.com/v1)"
+                placeholder={
+                  form.provider === "gemini"
+                    ? "https://generativelanguage.googleapis.com/v1beta/openai/"
+                    : "Base URL (vd: https://api.openai.com/v1)"
+                }
                 value={form.baseUrl}
                 onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
               />

@@ -1,4 +1,4 @@
-export type AiProviderType = "openai" | "anthropic" | "gemini" | "openai_compatible";
+export type AiProviderType = "openai" | "anthropic" | "openai_compatible";
 
 export type AiProviderName =
   | "openai"
@@ -46,10 +46,11 @@ export const AI_PROVIDER_REGISTRY: AiProviderMeta[] = [
   {
     id: "gemini",
     label: "Google Gemini",
-    type: "gemini",
-    defaultModel: "gemini-2.5-flash-lite",
+    type: "openai_compatible",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    defaultModel: "gemini-2.5-pro",
     description:
-      "Dùng gemini-2.5-flash-lite / gemini-2.5-flash. Nếu lỗi limit:0 — đổi model không giúp; cần API key project khác hoặc bật Billing tại AI Studio.",
+      "Dùng OpenAI-compatible API của Google. Base URL: https://generativelanguage.googleapis.com/v1beta/openai/ — API key từ AI Studio. Model gợi ý: gemini-2.5-pro / gemini-2.5-flash. Nếu lỗi limit:0 — đổi model không giúp; cần key/project khác hoặc bật Billing.",
     group: "popular",
   },
   {

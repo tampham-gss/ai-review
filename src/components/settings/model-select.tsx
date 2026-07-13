@@ -48,7 +48,7 @@ export function ModelSelect({ provider, value, onChange }: ModelSelectProps) {
 
       {(selectValue === CUSTOM_MODEL_VALUE || useCustom) && (
         <Input
-          placeholder="Nhập tên model (vd: gemini-2.0-flash-lite)"
+          placeholder="Nhập tên model (vd: gemini-2.5-pro)"
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />

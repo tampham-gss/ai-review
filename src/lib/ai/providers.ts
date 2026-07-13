@@ -1,6 +1,5 @@
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import {
@@ -126,11 +125,6 @@ function formatAiError(
   return raw;
 }
 
-/** Chuẩn hóa model id Gemini (bỏ prefix models/). */
-function normalizeGeminiModel(model: string): string {
-  return model.replace(/^models\//i, "").trim();
-}
-
 export async function testAiConnection(params: {
   provider: AiProviderName;
   apiKey?: string;
@@ -174,14 +168,6 @@ export async function testAiConnection(params: {
         });
         break;
       }
-      case "gemini": {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const geminiModel = genAI.getGenerativeModel({
-          model: normalizeGeminiModel(model),
-        });
-        await geminiModel.generateContent("ping");
-        break;
-      }
       default:
         throw new Error(`Provider không hỗ trợ: ${params.provider}`);
     }
@@ -206,7 +192,8 @@ export async function getUserAiProviders(userId: string): Promise<AiProviderConf
     id: p.id,
     provider: p.provider as AiProviderName,
     apiKey: decrypt(p.apiKeyEncrypted),
-    baseUrl: p.baseUrl,
+    baseUrl:
+      p.baseUrl ?? getDefaultBaseUrl(p.provider as AiProviderName) ?? null,
     model: p.model ?? getDefaultModel(p.provider as AiProviderName),
     tokensUsed: p.tokensUsed,
     tokenLimit: p.tokenLimit,
@@ -287,23 +274,6 @@ async function callAnthropic(
   return { text, tokens };
 }
 
-async function callGemini(
-  provider: AiProviderConfig,
-  system: string,
-  user: string,
-): Promise<{ text: string; tokens: number }> {
-  const genAI = new GoogleGenerativeAI(provider.apiKey);
-  const model = genAI.getGenerativeModel({
-    model: normalizeGeminiModel(provider.model),
-    systemInstruction: system,
-    generationConfig: { responseMimeType: "application/json" },
-  });
-  const response = await model.generateContent(user);
-  const text = response.response.text() || "{}";
-  const tokens = Math.ceil((system.length + user.length + text.length) / 4);
-  return { text, tokens };
-}
-
 async function callAi(
   provider: AiProviderConfig,
   system: string,
@@ -318,8 +288,6 @@ async function callAi(
       return callOpenAI(provider, system, user);
     case "anthropic":
       return callAnthropic(provider, system, user);
-    case "gemini":
-      return callGemini(provider, system, user);
     default:
       throw new Error(`Provider không hỗ trợ: ${provider.provider}`);
   }
