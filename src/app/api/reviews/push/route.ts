@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { postDiscussionNote } from "@/lib/gitlab/client";
+import { findGitlabConnectionForHost } from "@/lib/gitlab/resolve-connection";
 import { formatReplyForGitlab } from "@/lib/reviews/reply-format";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -27,9 +28,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const connection = await prisma.gitlabConnection.findFirst({
-      where: { userId: authResult.userId, host: session.gitlabHost },
-    });
+    const connection = await findGitlabConnectionForHost(
+      authResult.userId,
+      session.gitlabHost,
+    );
     if (!connection) {
       return NextResponse.json({ error: "GitLab connection not found" }, { status: 404 });
     }

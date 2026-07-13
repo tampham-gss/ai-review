@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { AmbientBackground } from "@/components/layout/ambient-background";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -35,16 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div
-          className="absolute -left-32 top-0 h-96 w-96 rounded-full blur-3xl"
-          style={{ background: "var(--glow-violet)" }}
-        />
-        <div
-          className="absolute right-0 top-32 h-80 w-80 rounded-full blur-3xl"
-          style={{ background: "var(--glow-cyan)" }}
-        />
-      </div>
+      <AmbientBackground variant="app" />
 
       <header className="sticky top-0 z-40 border-b border-border bg-header backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4">

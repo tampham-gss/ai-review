@@ -34,11 +34,19 @@ export async function PATCH(
 
   try {
     const body = patchSchema.parse(await request.json());
-    const nextHost = body.host ? normalizeGitlabHost(body.host) : existing.host;
-    const nextToken = body.token ? body.token : decrypt(existing.tokenEncrypted);
+    const onlyDefault =
+      body.isDefault !== undefined &&
+      body.name === undefined &&
+      body.host === undefined &&
+      body.token === undefined;
 
-    // Luôn test lại khi đổi host/token; khi chỉ đổi name/default thì test token hiện tại
-    const user = await testGitlabConnection(nextHost, nextToken);
+    let gitlabUser: { username?: string } | null = null;
+
+    if (!onlyDefault) {
+      const nextHost = body.host ? normalizeGitlabHost(body.host) : existing.host;
+      const nextToken = body.token ? body.token : decrypt(existing.tokenEncrypted);
+      gitlabUser = await testGitlabConnection(nextHost, nextToken);
+    }
 
     if (body.isDefault === true) {
       await prisma.gitlabConnection.updateMany({
@@ -47,27 +55,13 @@ export async function PATCH(
       });
     }
 
-    if (body.host && nextHost !== existing.host) {
-      const conflict = await prisma.gitlabConnection.findFirst({
-        where: {
-          userId: authResult.userId,
-          host: nextHost,
-          NOT: { id },
-        },
-      });
-      if (conflict) {
-        return NextResponse.json(
-          { error: "Đã có kết nối với host này" },
-          { status: 400 },
-        );
-      }
-    }
-
     const connection = await prisma.gitlabConnection.update({
       where: { id },
       data: {
         ...(body.name !== undefined ? { name: body.name } : {}),
-        ...(body.host !== undefined ? { host: nextHost } : {}),
+        ...(body.host !== undefined
+          ? { host: normalizeGitlabHost(body.host) }
+          : {}),
         ...(body.token !== undefined
           ? { tokenEncrypted: encrypt(body.token) }
           : {}),
@@ -76,7 +70,7 @@ export async function PATCH(
       select: { id: true, name: true, host: true, isDefault: true },
     });
 
-    return NextResponse.json({ connection, user });
+    return NextResponse.json({ connection, user: gitlabUser });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Dữ liệu không hợp lệ" }, { status: 400 });
@@ -101,5 +95,19 @@ export async function DELETE(
   }
 
   await prisma.gitlabConnection.delete({ where: { id } });
+
+  if (existing.isDefault) {
+    const next = await prisma.gitlabConnection.findFirst({
+      where: { userId: authResult.userId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (next) {
+      await prisma.gitlabConnection.update({
+        where: { id: next.id },
+        data: { isDefault: true },
+      });
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

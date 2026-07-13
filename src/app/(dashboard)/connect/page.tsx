@@ -34,6 +34,7 @@ export default function ConnectPage() {
   const [message, setMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [actionId, setActionId] = useState("");
+  const [makeDefault, setMakeDefault] = useState(false);
 
   async function loadConnections() {
     const res = await fetch("/api/gitlab/connections");
@@ -51,6 +52,7 @@ export default function ConnectPage() {
     setName("GitLab nội bộ");
     setHost("https://gitlab.gss-sol.com");
     setToken("");
+    setMakeDefault(false);
     setMessage("");
   }
 
@@ -97,7 +99,14 @@ export default function ConnectPage() {
       const res = await fetch("/api/gitlab/connections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, host, token }),
+        body: JSON.stringify({
+          name,
+          host,
+          token,
+          ...(makeDefault || connections.length === 0
+            ? { isDefault: true }
+            : {}),
+        }),
       });
       const data = await res.json();
 
@@ -112,6 +121,7 @@ export default function ConnectPage() {
       setMessage(ok);
       toast.success(ok);
       setToken("");
+      setMakeDefault(false);
       await loadConnections();
     } catch {
       toast.error("Lỗi kết nối khi lưu GitLab");
@@ -191,7 +201,8 @@ export default function ConnectPage() {
       <div>
         <h1 className="text-3xl font-bold text-foreground">Kết nối GitLab</h1>
         <p className="mt-1 text-muted">
-          Hỗ trợ gitlab.com (OAuth) và self-hosted qua Personal Access Token.
+          Thêm nhiều GitLab (PAT / OAuth), chọn một kết nối mặc định để dùng khi
+          review.
         </p>
       </div>
 
@@ -266,6 +277,19 @@ export default function ConnectPage() {
                 onChange={(e) => setToken(e.target.value)}
                 required={!editingId}
               />
+              {!editingId && (
+                <label className="flex items-center gap-2 text-sm text-muted">
+                  <input
+                    type="checkbox"
+                    checked={makeDefault || connections.length === 0}
+                    disabled={connections.length === 0}
+                    onChange={(e) => setMakeDefault(e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  Đặt làm GitLab mặc định
+                  {connections.length === 0 ? " (kết nối đầu tiên)" : ""}
+                </label>
+              )}
               {message && (
                 <p
                   className={`text-sm ${
@@ -291,8 +315,13 @@ export default function ConnectPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Kết nối hiện có</CardTitle>
-            <CardDescription>Sửa, test lại, đặt mặc định hoặc xóa</CardDescription>
+            <CardTitle>
+              Kết nối hiện có
+              {connections.length > 0 ? ` (${connections.length})` : ""}
+            </CardTitle>
+            <CardDescription>
+              Hiển thị tất cả kết nối — nhấn Mặc định để chọn GitLab dùng ưu tiên
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {connections.length === 0 ? (

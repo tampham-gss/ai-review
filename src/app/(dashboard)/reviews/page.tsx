@@ -22,6 +22,7 @@ interface Connection {
   id: string;
   name: string;
   host: string;
+  isDefault?: boolean;
 }
 
 interface Project {
@@ -81,7 +82,9 @@ export default function NewReviewPage() {
         setConnections(connData.connections ?? []);
         setCategories(cats);
         setSelectedCategories(cats.map((c: Category) => c.id));
-        if (connData.connections?.[0]) setConnectionId(connData.connections[0].id);
+        const conns = (connData.connections ?? []) as Connection[];
+        const preferred = conns.find((c) => c.isDefault) ?? conns[0];
+        if (preferred) setConnectionId(preferred.id);
       } catch {
         toast.error("Không tải được dữ liệu khởi tạo");
       } finally {
@@ -262,6 +265,7 @@ export default function NewReviewPage() {
             >
               {connections.map((c) => (
                 <option key={c.id} value={c.id}>
+                  {c.isDefault ? "★ " : ""}
                   {c.name} — {c.host}
                 </option>
               ))}

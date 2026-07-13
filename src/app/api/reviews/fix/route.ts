@@ -2,6 +2,7 @@ import { requireUser, getConventionText } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { downloadRepositoryArchive } from "@/lib/gitlab/client";
+import { findGitlabConnectionForHost } from "@/lib/gitlab/resolve-connection";
 import {
   createZipFromMap,
   extractZipToMap,
@@ -31,9 +32,10 @@ async function loadSourceFiles(session: {
     return extractZipToMap(Buffer.from(session.zipData));
   }
 
-  const connection = await prisma.gitlabConnection.findFirst({
-    where: { userId: session.userId, host: session.gitlabHost },
-  });
+  const connection = await findGitlabConnectionForHost(
+    session.userId,
+    session.gitlabHost,
+  );
   if (!connection) throw new Error("Không tìm thấy GitLab connection");
 
   const token = decrypt(connection.tokenEncrypted);

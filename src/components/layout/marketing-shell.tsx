@@ -4,16 +4,12 @@ import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Toaster } from "@/components/ui/toaster";
+import { AmbientBackground } from "@/components/layout/ambient-background";
 
 export function MarketingShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div
-          className="absolute left-1/2 top-0 h-[500px] w-[500px] -translate-x-1/2 rounded-full blur-3xl"
-          style={{ background: "var(--glow-violet)" }}
-        />
-      </div>
+      <AmbientBackground variant="marketing" />
       <div className="absolute right-4 top-4 z-10">
         <ThemeToggle />
       </div>

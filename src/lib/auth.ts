@@ -89,24 +89,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           token.userId = dbUser.id;
 
-          await prisma.gitlabConnection.upsert({
-            where: {
-              userId_host: {
-                userId: dbUser.id,
-                host: "https://gitlab.com",
-              },
-            },
-            create: {
-              userId: dbUser.id,
-              name: "GitLab.com",
-              host: "https://gitlab.com",
-              tokenEncrypted: encrypt(account.access_token),
-              isDefault: true,
-            },
-            update: {
-              tokenEncrypted: encrypt(account.access_token),
-            },
+          const gitlabHost = "https://gitlab.com";
+          const existingConn = await prisma.gitlabConnection.findFirst({
+            where: { userId: dbUser.id, host: gitlabHost },
+            orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
           });
+
+          if (existingConn) {
+            await prisma.gitlabConnection.update({
+              where: { id: existingConn.id },
+              data: { tokenEncrypted: encrypt(account.access_token) },
+            });
+          } else {
+            const otherCount = await prisma.gitlabConnection.count({
+              where: { userId: dbUser.id },
+            });
+            await prisma.gitlabConnection.create({
+              data: {
+                userId: dbUser.id,
+                name: "GitLab.com",
+                host: gitlabHost,
+                tokenEncrypted: encrypt(account.access_token),
+                isDefault: otherCount === 0,
+              },
+            });
+          }
         } catch (error) {
           console.error("[auth] gitlab jwt callback failed:", error);
         }
