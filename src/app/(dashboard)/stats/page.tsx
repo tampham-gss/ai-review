@@ -14,8 +14,12 @@ import {
   MessageSquare,
   RefreshCw,
   ShieldCheck,
+  Trophy,
   Zap,
 } from "lucide-react";
+import { StarRating } from "@/components/ui/star-rating";
+import { getProviderMeta } from "@/lib/ai/provider-registry";
+import type { StarScore } from "@/lib/ai/model-rating";
 
 interface StatsResponse {
   range: StatsRange;
@@ -61,6 +65,27 @@ interface StatsResponse {
     tokenLimit: number | null;
     remaining: number | null;
   }>;
+  modelRatings: Array<{
+    providerId: string;
+    provider: string;
+    model: string | null;
+    overallStars: StarScore;
+    capabilityStars: StarScore;
+    performanceStars: StarScore | null;
+    label: string;
+    reason: string;
+    sampleSize: number;
+    avgConfidence: number | null;
+    sessionCount: number;
+  }>;
+  bestModel: {
+    providerId: string;
+    provider: string;
+    model: string | null;
+    overallStars: StarScore;
+    label: string;
+    reason: string;
+  } | null;
 }
 
 const RANGES: Array<{ id: StatsRange; label: string }> = [
@@ -394,6 +419,75 @@ export default function StatsPage() {
 
           <Card>
             <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Trophy className="h-4 w-4 text-amber-400" />
+                Xếp hạng model AI
+              </CardTitle>
+              <CardDescription>
+                Sao = sức mạnh model + hiệu suất thực tế (confidence, hoàn tất phiên).
+                {data.bestModel && (
+                  <>
+                    {" "}
+                    Đang dẫn đầu:{" "}
+                    <span className="text-amber-200">
+                      {getProviderMeta(data.bestModel.provider)?.label ??
+                        data.bestModel.provider}{" "}
+                      · {data.bestModel.model ?? "default"} ({data.bestModel.label})
+                    </span>
+                  </>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {data.modelRatings.length === 0 ? (
+                <p className="text-sm text-slate-400">Chưa có provider để xếp hạng.</p>
+              ) : (
+                <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {data.modelRatings.map((r, idx) => (
+                    <div
+                      key={r.providerId}
+                      className="flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-medium text-slate-500">
+                            #{idx + 1}
+                          </span>
+                          <p className="truncate font-medium">
+                            {getProviderMeta(r.provider)?.label ?? r.provider}
+                          </p>
+                          {idx === 0 && <Badge variant="violet">Tốt nhất</Badge>}
+                        </div>
+                        <p className="truncate font-mono text-xs text-slate-500">
+                          {r.model ?? "default"}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">{r.reason}</p>
+                      </div>
+                      <div className="shrink-0 space-y-1 sm:text-right">
+                        <StarRating
+                          stars={r.overallStars}
+                          showValue
+                          label={r.label}
+                        />
+                        <p className="text-[11px] text-slate-500">
+                          Model {r.capabilityStars}★
+                          {r.performanceStars
+                            ? ` · Thực tế ${r.performanceStars}★`
+                            : " · Chưa đủ mẫu thực tế"}
+                          {r.avgConfidence != null
+                            ? ` · conf ${Math.round(r.avgConfidence * 100)}%`
+                            : ""}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>AI Providers (lifetime)</CardTitle>
               <CardDescription>Tổng token đã dùng trên từng provider</CardDescription>
             </CardHeader>
@@ -402,26 +496,41 @@ export default function StatsPage() {
                 <p className="text-sm text-slate-400">Chưa cấu hình provider.</p>
               ) : (
                 <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                  {data.providers.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{p.provider}</p>
-                        <p className="truncate text-xs text-slate-500">
-                          {p.model ?? "default"}
-                        </p>
+                  {data.providers.map((p) => {
+                    const rating = data.modelRatings.find(
+                      (r) => r.providerId === p.id,
+                    );
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">
+                            {getProviderMeta(p.provider)?.label ?? p.provider}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {p.model ?? "default"}
+                          </p>
+                          {rating && (
+                            <StarRating
+                              className="mt-1"
+                              stars={rating.overallStars}
+                              showValue
+                              label={rating.label}
+                            />
+                          )}
+                        </div>
+                        <div className="shrink-0 text-right text-slate-300">
+                          <p className="font-mono">{formatNumber(p.tokensUsed)}</p>
+                          <p className="text-xs text-slate-500">
+                            còn{" "}
+                            {p.remaining === null ? "∞" : formatNumber(p.remaining)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="shrink-0 text-right text-slate-300">
-                        <p className="font-mono">{formatNumber(p.tokensUsed)}</p>
-                        <p className="text-xs text-slate-500">
-                          còn{" "}
-                          {p.remaining === null ? "∞" : formatNumber(p.remaining)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

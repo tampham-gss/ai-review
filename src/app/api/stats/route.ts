@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
+import { getProviderRatingsForUser } from "@/lib/ai/provider-ratings";
 import {
   buildBuckets,
   getRangeBounds,
@@ -20,47 +21,49 @@ export async function GET(request: Request) {
   const { start, end } = getRangeBounds(range);
   const userId = authResult.userId;
 
-  const [sessions, comments, tokenLogs, providers] = await Promise.all([
-    prisma.reviewSession.findMany({
-      where: { userId, createdAt: { gte: start, lte: end } },
-      select: {
-        id: true,
-        status: true,
-        projectPath: true,
-        createdAt: true,
-      },
-    }),
-    prisma.commentValidationResult.findMany({
-      where: {
-        session: { userId },
-        createdAt: { gte: start, lte: end },
-      },
-      select: {
-        verdict: true,
-        pushedToGitlab: true,
-        createdAt: true,
-      },
-    }),
-    prisma.tokenUsageLog.findMany({
-      where: { userId, createdAt: { gte: start, lte: end } },
-      select: {
-        tokens: true,
-        action: true,
-        createdAt: true,
-        providerId: true,
-      },
-    }),
-    prisma.aiProvider.findMany({
-      where: { userId },
-      select: {
-        id: true,
-        provider: true,
-        model: true,
-        tokensUsed: true,
-        tokenLimit: true,
-      },
-    }),
-  ]);
+  const [sessions, comments, tokenLogs, providers, modelRatings] =
+    await Promise.all([
+      prisma.reviewSession.findMany({
+        where: { userId, createdAt: { gte: start, lte: end } },
+        select: {
+          id: true,
+          status: true,
+          projectPath: true,
+          createdAt: true,
+        },
+      }),
+      prisma.commentValidationResult.findMany({
+        where: {
+          session: { userId },
+          createdAt: { gte: start, lte: end },
+        },
+        select: {
+          verdict: true,
+          pushedToGitlab: true,
+          createdAt: true,
+        },
+      }),
+      prisma.tokenUsageLog.findMany({
+        where: { userId, createdAt: { gte: start, lte: end } },
+        select: {
+          tokens: true,
+          action: true,
+          createdAt: true,
+          providerId: true,
+        },
+      }),
+      prisma.aiProvider.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          provider: true,
+          model: true,
+          tokensUsed: true,
+          tokenLimit: true,
+        },
+      }),
+      getProviderRatingsForUser(userId, { since: start }),
+    ]);
 
   const buckets = buildBuckets(range, start, end);
 
@@ -147,5 +150,7 @@ export async function GET(request: Request) {
         ? Math.max(0, p.tokenLimit - p.tokensUsed)
         : null,
     })),
+    modelRatings,
+    bestModel: modelRatings[0] ?? null,
   });
 }

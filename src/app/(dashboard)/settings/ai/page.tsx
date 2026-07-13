@@ -18,6 +18,17 @@ import {
 } from "@/lib/ai/provider-registry";
 import { ModelSelect } from "@/components/settings/model-select";
 import { CheckCircle2, Pencil, Star, Trash2, X } from "lucide-react";
+import { StarRating } from "@/components/ui/star-rating";
+import type { StarScore } from "@/lib/ai/model-rating";
+
+interface ProviderRatingInfo {
+  overallStars: StarScore;
+  capabilityStars: StarScore;
+  performanceStars: StarScore | null;
+  label: string;
+  reason: string;
+  sampleSize: number;
+}
 
 interface Provider {
   id: string;
@@ -30,6 +41,7 @@ interface Provider {
   priority: number;
   isDefault: boolean;
   isEnabled: boolean;
+  rating?: ProviderRatingInfo | null;
 }
 
 interface ProviderForm {
@@ -462,6 +474,18 @@ export default function AiSettingsPage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium">{getLabel(p.provider)}</p>
                         <p className="truncate text-sm text-slate-400">{p.model ?? "default model"}</p>
+                        {p.rating && (
+                          <div className="mt-2 space-y-0.5">
+                            <StarRating
+                              stars={p.rating.overallStars}
+                              showValue
+                              label={p.rating.label}
+                            />
+                            <p className="text-[11px] text-slate-500" title={p.rating.reason}>
+                              {p.rating.reason}
+                            </p>
+                          </div>
+                        )}
                         {p.baseUrl && (
                           <p className="mt-1 truncate font-mono text-xs text-slate-500">{p.baseUrl}</p>
                         )}

@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { testAiConnection } from "@/lib/ai/providers";
+import { getProviderRatingsForUser } from "@/lib/ai/provider-ratings";
 import { aiProviderCreateSchema } from "@/lib/ai/schemas";
 import type { AiProviderName } from "@/lib/ai/provider-registry";
 import { NextResponse } from "next/server";
@@ -11,27 +12,46 @@ export async function GET() {
   const authResult = await requireUser();
   if ("error" in authResult) return authResult.error;
 
-  const providers = await prisma.aiProvider.findMany({
-    where: { userId: authResult.userId },
-    orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
-    select: {
-      id: true,
-      provider: true,
-      baseUrl: true,
-      model: true,
-      isDefault: true,
-      isEnabled: true,
-      tokenLimit: true,
-      tokensUsed: true,
-      priority: true,
-    },
-  });
+  const [providers, ratings] = await Promise.all([
+    prisma.aiProvider.findMany({
+      where: { userId: authResult.userId },
+      orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        provider: true,
+        baseUrl: true,
+        model: true,
+        isDefault: true,
+        isEnabled: true,
+        tokenLimit: true,
+        tokensUsed: true,
+        priority: true,
+      },
+    }),
+    getProviderRatingsForUser(authResult.userId),
+  ]);
+
+  const ratingById = new Map(ratings.map((r) => [r.providerId, r]));
 
   return NextResponse.json({
-    providers: providers.map((p) => ({
-      ...p,
-      remaining: p.tokenLimit ? Math.max(0, p.tokenLimit - p.tokensUsed) : null,
-    })),
+    providers: providers.map((p) => {
+      const rating = ratingById.get(p.id);
+      return {
+        ...p,
+        remaining: p.tokenLimit ? Math.max(0, p.tokenLimit - p.tokensUsed) : null,
+        rating: rating
+          ? {
+              overallStars: rating.overallStars,
+              capabilityStars: rating.capabilityStars,
+              performanceStars: rating.performanceStars,
+              label: rating.label,
+              reason: rating.reason,
+              sampleSize: rating.sampleSize,
+            }
+          : null,
+      };
+    }),
+    bestProviderId: ratings[0]?.providerId ?? null,
   });
 }
 
