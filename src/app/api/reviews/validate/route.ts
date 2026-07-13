@@ -41,19 +41,32 @@ export async function POST(request: Request) {
   const readable = new ReadableStream({
     async start(controller) {
       const send = (event: ValidateProgressEvent) => {
-        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          // Client đã abort / stream đã đóng
+        }
       };
 
       try {
-        await runValidateJob(authResult.userId, body, send);
+        await runValidateJob(authResult.userId, body, send, request.signal);
       } catch (error) {
-        send({
-          type: "error",
-          message: error instanceof Error ? error.message : "Validate thất bại",
-        });
+        if (!request.signal.aborted) {
+          send({
+            type: "error",
+            message: error instanceof Error ? error.message : "Validate thất bại",
+          });
+        }
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
       }
+    },
+    cancel() {
+      // AbortSignal từ request đã được truyền vào job
     },
   });
 

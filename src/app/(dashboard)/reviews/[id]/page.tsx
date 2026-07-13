@@ -7,16 +7,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CommentSkeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toaster";
 import {
   AlertTriangle,
   ArrowLeft,
   Download,
+  History,
   MessageSquare,
   Wrench,
 } from "lucide-react";
-import {
-  AiProviderPicker,
-} from "@/components/reviews/ai-provider-picker";
+import { AiProviderPicker } from "@/components/reviews/ai-provider-picker";
 import { CardDescription } from "@/components/ui/card";
 
 interface CommentResult {
@@ -78,11 +78,21 @@ export default function ReviewSessionPage() {
   const [providerSaving, setProviderSaving] = useState(false);
 
   const loadSession = useCallback(async () => {
-    const res = await fetch(`/api/reviews/${params.id}`);
-    const data = await res.json();
-    setSession(data.session);
-    setProviderId(data.session?.aiProviderId ?? data.session?.aiProvider?.id ?? null);
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/reviews/${params.id}`);
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Không tải được phiên review");
+        setSession(null);
+        return;
+      }
+      setSession(data.session);
+      setProviderId(data.session?.aiProviderId ?? data.session?.aiProvider?.id ?? null);
+    } catch {
+      toast.error("Lỗi kết nối khi tải phiên review");
+    } finally {
+      setLoading(false);
+    }
   }, [params.id]);
 
   async function changeProvider(nextId: string) {
@@ -90,13 +100,24 @@ export default function ReviewSessionPage() {
     if (nextId === session?.aiProviderId) return;
 
     setProviderSaving(true);
-    await fetch(`/api/reviews/${params.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ aiProviderId: nextId }),
-    });
-    setProviderSaving(false);
-    loadSession();
+    try {
+      const res = await fetch(`/api/reviews/${params.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiProviderId: nextId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Đổi provider thất bại");
+        return;
+      }
+      toast.success("Đã cập nhật AI provider");
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi đổi provider");
+    } finally {
+      setProviderSaving(false);
+    }
   }
 
   useEffect(() => {
@@ -105,65 +126,120 @@ export default function ReviewSessionPage() {
 
   async function fixComment(commentId: string) {
     setActionLoading(commentId);
-    await fetch("/api/reviews/fix", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: params.id,
-        commentIds: [commentId],
-        providerId: providerId ?? undefined,
-      }),
-    });
-    setActionLoading("");
-    loadSession();
+    try {
+      const res = await fetch("/api/reviews/fix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: params.id,
+          commentIds: [commentId],
+          providerId: providerId ?? undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "AI fix thất bại");
+        return;
+      }
+      toast.success("Đã AI fix comment");
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi AI fix");
+    } finally {
+      setActionLoading("");
+    }
   }
 
   async function fixAllValid() {
     setActionLoading("fix-all");
-    await fetch("/api/reviews/fix", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: params.id,
-        fixAllValid: true,
-        providerId: providerId ?? undefined,
-      }),
-    });
-    setActionLoading("");
-    loadSession();
+    try {
+      const res = await fetch("/api/reviews/fix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: params.id,
+          fixAllValid: true,
+          providerId: providerId ?? undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "AI fix tất cả thất bại");
+        return;
+      }
+      toast.success("Đã AI fix tất cả comment VALID");
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi AI fix tất cả");
+    } finally {
+      setActionLoading("");
+    }
   }
 
   async function pushComment(commentId: string) {
     setActionLoading(`push-${commentId}`);
-    await fetch("/api/reviews/push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: params.id, commentIds: [commentId] }),
-    });
-    setActionLoading("");
-    loadSession();
+    try {
+      const res = await fetch("/api/reviews/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: params.id, commentIds: [commentId] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Push thất bại");
+        return;
+      }
+      toast.success("Đã push reply lên GitLab");
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi push");
+    } finally {
+      setActionLoading("");
+    }
   }
 
   async function pushAllInvalid() {
     setActionLoading("push-all");
-    await fetch("/api/reviews/push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: params.id, pushAllInvalid: true }),
-    });
-    setActionLoading("");
-    loadSession();
+    try {
+      const res = await fetch("/api/reviews/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: params.id, pushAllInvalid: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Push tất cả thất bại");
+        return;
+      }
+      toast.success("Đã push tất cả reply INVALID");
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi push tất cả");
+    } finally {
+      setActionLoading("");
+    }
   }
 
   async function pushValidReply(commentId: string) {
     setActionLoading(`push-valid-${commentId}`);
-    await fetch("/api/reviews/push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: params.id, commentIds: [commentId] }),
-    });
-    setActionLoading("");
-    loadSession();
+    try {
+      const res = await fetch("/api/reviews/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: params.id, commentIds: [commentId] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Push reply thất bại");
+        return;
+      }
+      toast.success("Đã push reply đã fix");
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi push reply");
+    } finally {
+      setActionLoading("");
+    }
   }
 
   if (loading) {
@@ -185,32 +261,42 @@ export default function ReviewSessionPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-4">
-        <Link href="/reviews">
+      <div className="flex flex-wrap items-center gap-3">
+        <Link href="/reviews/history">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4" />
-            Quay lại
+            Lịch sử
           </Button>
         </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-white">
+        <Link href="/reviews">
+          <Button variant="ghost" size="sm">
+            <History className="h-4 w-4" />
+            Review mới
+          </Button>
+        </Link>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-2xl font-bold text-white" title={`${session.projectPath} !${session.mrIid}`}>
             {session.projectPath} !{session.mrIid}
           </h1>
-          <p className="text-sm text-slate-400">{session.sourceBranch} · {session.status}</p>
+          <p className="truncate text-sm text-slate-400">
+            {session.sourceBranch} · {session.status}
+          </p>
         </div>
       </div>
 
       {session.zipWarning && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          Phiên này dùng source ZIP upload — kết quả có thể lệch so với GitLab.
+          <p className="min-w-0 break-words">
+            Phiên này dùng source ZIP upload — kết quả có thể lệch so với GitLab.
+          </p>
         </div>
       )}
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">AI Provider cho phiên này</CardTitle>
-          <CardDescription>
+          <CardDescription className="break-words">
             {session.aiProvider
               ? `Đang dùng: ${session.aiProvider.label} · ${session.aiProvider.model ?? "default"}`
               : "Chưa ghi nhận provider — chọn model trước khi fix comment."}
@@ -237,20 +323,20 @@ export default function ReviewSessionPage() {
           <Button
             variant="success"
             onClick={fixAllValid}
-            disabled={actionLoading === "fix-all"}
+            loading={actionLoading === "fix-all"}
           >
-            <Wrench className="h-4 w-4" />
-            AI fix tất cả VALID (1 source)
+            {actionLoading !== "fix-all" && <Wrench className="h-4 w-4" />}
+            {actionLoading === "fix-all" ? "Đang fix..." : "AI fix tất cả VALID"}
           </Button>
         )}
         {invalidCount > 0 && (
           <Button
             variant="destructive"
             onClick={pushAllInvalid}
-            disabled={actionLoading === "push-all"}
+            loading={actionLoading === "push-all"}
           >
-            <MessageSquare className="h-4 w-4" />
-            Push tất cả lý do INVALID
+            {actionLoading !== "push-all" && <MessageSquare className="h-4 w-4" />}
+            {actionLoading === "push-all" ? "Đang push..." : "Push tất cả lý do INVALID"}
           </Button>
         )}
         {session.hasFixedSource && (
@@ -263,35 +349,38 @@ export default function ReviewSessionPage() {
         )}
       </div>
 
-      <div className="space-y-4">
+      <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
         {session.commentResults.map((comment) => (
           <Card key={comment.id}>
             <CardHeader className="pb-3">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 {verdictBadge(comment.verdict)}
                 {comment.severity && <Badge variant="high">{comment.severity}</Badge>}
                 {comment.filePath && (
-                  <span className="font-mono text-xs text-cyan-300">
+                  <span
+                    className="min-w-0 max-w-full truncate font-mono text-xs text-cyan-300"
+                    title={`${comment.filePath}:${comment.line}`}
+                  >
                     {comment.filePath}:{comment.line}
                   </span>
                 )}
                 {comment.pushedToGitlab && <Badge variant="violet">Đã push</Badge>}
               </div>
-              <CardTitle className="text-sm font-normal text-slate-300">
+              <CardTitle className="truncate text-sm font-normal text-slate-300">
                 {comment.author}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <pre className="max-h-40 overflow-auto rounded-xl bg-black/30 p-3 text-xs text-slate-300 whitespace-pre-wrap">
+              <pre className="max-h-40 overflow-auto rounded-xl bg-black/30 p-3 text-xs text-slate-300 whitespace-pre-wrap break-words">
                 {comment.body.slice(0, 600)}
                 {comment.body.length > 600 ? "..." : ""}
               </pre>
 
               {comment.reasonShort && (
                 <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                  <p className="text-sm font-medium text-white">{comment.reasonShort}</p>
+                  <p className="break-words text-sm font-medium text-white">{comment.reasonShort}</p>
                   {comment.reasonDetail && (
-                    <p className="mt-2 text-sm text-slate-400">{comment.reasonDetail}</p>
+                    <p className="mt-2 break-words text-sm text-slate-400">{comment.reasonDetail}</p>
                   )}
                   {comment.confidence != null && (
                     <p className="mt-2 text-xs text-slate-500">
@@ -318,7 +407,7 @@ export default function ReviewSessionPage() {
                       ? "Reply phản bác — bảo vệ code hiện tại"
                       : "Reply đề xuất"}
                   </p>
-                  <p className="text-sm text-slate-300 whitespace-pre-wrap">
+                  <p className="break-words text-sm text-slate-300 whitespace-pre-wrap">
                     {comment.suggestedReply}
                   </p>
                 </div>
@@ -331,17 +420,19 @@ export default function ReviewSessionPage() {
                       size="sm"
                       variant="success"
                       onClick={() => fixComment(comment.id)}
-                      disabled={actionLoading === comment.id}
+                      loading={actionLoading === comment.id}
                     >
-                      AI fix comment này
+                      {actionLoading === comment.id ? "Đang fix..." : "AI fix comment này"}
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => pushValidReply(comment.id)}
-                      disabled={actionLoading === `push-valid-${comment.id}`}
+                      loading={actionLoading === `push-valid-${comment.id}`}
                     >
-                      Push reply đã fix
+                      {actionLoading === `push-valid-${comment.id}`
+                        ? "Đang push..."
+                        : "Push reply đã fix"}
                     </Button>
                   </>
                 )}
@@ -350,9 +441,11 @@ export default function ReviewSessionPage() {
                     size="sm"
                     variant="destructive"
                     onClick={() => pushComment(comment.id)}
-                    disabled={actionLoading === `push-${comment.id}`}
+                    loading={actionLoading === `push-${comment.id}`}
                   >
-                    Push lý do invalid
+                    {actionLoading === `push-${comment.id}`
+                      ? "Đang push..."
+                      : "Push lý do invalid"}
                   </Button>
                 )}
               </div>

@@ -10,7 +10,7 @@ export default async function DashboardPage() {
   const session = await auth();
   const userId = session!.user!.id;
 
-  const [connections, providers, sessions] = await Promise.all([
+  const [connections, providers, sessions, sessionCount] = await Promise.all([
     prisma.gitlabConnection.count({ where: { userId } }),
     prisma.aiProvider.findMany({ where: { userId } }),
     prisma.reviewSession.findMany({
@@ -19,6 +19,7 @@ export default async function DashboardPage() {
       take: 5,
       include: { commentResults: true },
     }),
+    prisma.reviewSession.count({ where: { userId } }),
   ]);
 
   const totalTokensUsed = providers.reduce((sum, p) => sum + p.tokensUsed, 0);
@@ -67,18 +68,18 @@ export default async function DashboardPage() {
               <ShieldCheck className="h-4 w-4 text-emerald-400" />
               Review Runs
             </CardTitle>
-            <CardDescription>Lịch sử validate gần đây</CardDescription>
+            <CardDescription>Tổng số phiên đã chạy</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{sessions.length}</p>
-            <p className="text-sm text-slate-400">phiên gần nhất</p>
+            <p className="text-3xl font-bold">{sessionCount}</p>
+            <p className="text-sm text-slate-400">phiên trong lịch sử</p>
           </CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
             <CardTitle>Bắt đầu nhanh</CardTitle>
             <CardDescription>3 bước để validate review MR</CardDescription>
           </div>
@@ -107,30 +108,41 @@ export default async function DashboardPage() {
 
       {sessions.length > 0 && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
             <CardTitle>Phiên gần đây</CardTitle>
+            <Link href="/reviews/history">
+              <Button variant="secondary" size="sm">
+                Xem tất cả
+              </Button>
+            </Link>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {sessions.map((s) => {
-              const invalid = s.commentResults.filter((c) => c.verdict === "INVALID").length;
-              const valid = s.commentResults.filter((c) => c.verdict === "VALID").length;
-              return (
-                <Link
-                  key={s.id}
-                  href={`/reviews/${s.id}`}
-                  className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] p-4 transition hover:bg-white/[0.05]"
-                >
-                  <div>
-                    <p className="font-medium">{s.projectPath} !{s.mrIid}</p>
-                    <p className="text-sm text-slate-400">{s.sourceBranch} · {s.status}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Badge variant="valid">{valid} valid</Badge>
-                    <Badge variant="invalid">{invalid} invalid</Badge>
-                  </div>
-                </Link>
-              );
-            })}
+          <CardContent>
+            <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+              {sessions.map((s) => {
+                const invalid = s.commentResults.filter((c) => c.verdict === "INVALID").length;
+                const valid = s.commentResults.filter((c) => c.verdict === "VALID").length;
+                return (
+                  <Link
+                    key={s.id}
+                    href={`/reviews/${s.id}`}
+                    className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 transition hover:bg-white/[0.05] sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">
+                        {s.projectPath} !{s.mrIid}
+                      </p>
+                      <p className="truncate text-sm text-slate-400">
+                        {s.sourceBranch} · {s.status}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <Badge variant="valid">{valid} valid</Badge>
+                      <Badge variant="invalid">{invalid} invalid</Badge>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
       )}

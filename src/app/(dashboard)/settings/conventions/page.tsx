@@ -7,12 +7,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toaster";
+import { User } from "lucide-react";
 
 interface Category {
   id: string;
   name: string;
   level: number;
   files: Array<{ id: string; name: string; content: string }>;
+  user?: { id: string; name: string | null; email: string };
 }
 
 export default function ConventionsPage() {
@@ -23,12 +26,24 @@ export default function ConventionsPage() {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [fileName, setFileName] = useState("");
   const [fileContent, setFileContent] = useState("");
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [addingFile, setAddingFile] = useState(false);
+  const [deletingFileId, setDeletingFileId] = useState("");
 
   async function load() {
-    const res = await fetch("/api/conventions/categories");
-    const data = await res.json();
-    setCategories(data.categories ?? []);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/conventions/categories");
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Không tải được convention");
+        return;
+      }
+      setCategories(data.categories ?? []);
+    } catch {
+      toast.error("Lỗi kết nối khi tải convention");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -36,34 +51,73 @@ export default function ConventionsPage() {
   }, []);
 
   async function addCategory() {
-    await fetch("/api/conventions/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: catName, level: catLevel }),
-    });
-    setCatName("");
-    load();
+    setAddingCategory(true);
+    try {
+      const res = await fetch("/api/conventions/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: catName, level: catLevel }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Thêm category thất bại");
+        return;
+      }
+      setCatName("");
+      toast.success("Đã thêm category");
+      await load();
+    } catch {
+      toast.error("Lỗi kết nối khi thêm category");
+    } finally {
+      setAddingCategory(false);
+    }
   }
 
   async function addFile() {
     if (!selectedCategory) return;
-    await fetch("/api/conventions/files", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        categoryId: selectedCategory,
-        name: fileName,
-        content: fileContent,
-      }),
-    });
-    setFileName("");
-    setFileContent("");
-    load();
+    setAddingFile(true);
+    try {
+      const res = await fetch("/api/conventions/files", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categoryId: selectedCategory,
+          name: fileName,
+          content: fileContent,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Lưu file thất bại");
+        return;
+      }
+      setFileName("");
+      setFileContent("");
+      toast.success("Đã lưu file convention");
+      await load();
+    } catch {
+      toast.error("Lỗi kết nối khi lưu file");
+    } finally {
+      setAddingFile(false);
+    }
   }
 
   async function deleteFile(id: string) {
-    await fetch(`/api/conventions/files?id=${id}`, { method: "DELETE" });
-    load();
+    setDeletingFileId(id);
+    try {
+      const res = await fetch(`/api/conventions/files?id=${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Xóa file thất bại");
+        return;
+      }
+      toast.success("Đã xóa file convention");
+      await load();
+    } catch {
+      toast.error("Lỗi kết nối khi xóa file");
+    } finally {
+      setDeletingFileId("");
+    }
   }
 
   if (loading) return <PageSkeleton />;
@@ -92,7 +146,9 @@ export default function ConventionsPage() {
               value={catLevel}
               onChange={(e) => setCatLevel(Number(e.target.value))}
             />
-            <Button onClick={addCategory} disabled={!catName}>Thêm category</Button>
+            <Button onClick={addCategory} disabled={!catName} loading={addingCategory}>
+              {addingCategory ? "Đang thêm..." : "Thêm category"}
+            </Button>
           </CardContent>
         </Card>
 
@@ -120,8 +176,12 @@ export default function ConventionsPage() {
               onChange={(e) => setFileContent(e.target.value)}
               className="min-h-[160px] font-mono text-xs"
             />
-            <Button onClick={addFile} disabled={!selectedCategory || !fileName || !fileContent}>
-              Lưu file convention
+            <Button
+              onClick={addFile}
+              disabled={!selectedCategory || !fileName || !fileContent}
+              loading={addingFile}
+            >
+              {addingFile ? "Đang lưu..." : "Lưu file convention"}
             </Button>
           </CardContent>
         </Card>
@@ -130,33 +190,54 @@ export default function ConventionsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Danh sách convention</CardTitle>
+          <CardDescription>Danh sách dài sẽ cuộn trong khung, không kéo dài cả trang.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           {categories.length === 0 ? (
             <p className="text-sm text-slate-400">Chưa có convention nào.</p>
           ) : (
-            categories.map((c) => (
-              <div key={c.id} className="rounded-xl border border-white/10 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Badge variant="violet">Level {c.level}</Badge>
-                  <h3 className="font-medium">{c.name}</h3>
-                  <span className="text-sm text-slate-500">{c.files.length} files</span>
+            <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+              {categories.map((c) => (
+                <div key={c.id} className="rounded-xl border border-white/10 p-4">
+                  <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
+                    <Badge variant="violet" className="shrink-0">
+                      Level {c.level}
+                    </Badge>
+                    <h3 className="min-w-0 truncate font-medium">{c.name}</h3>
+                    <span className="shrink-0 text-sm text-slate-500">{c.files.length} files</span>
+                  </div>
+                  {c.user && (
+                    <p className="mb-3 flex min-w-0 items-center gap-1.5 text-xs text-slate-400">
+                      <User className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">
+                        Tạo bởi: {c.user.name || c.user.email}
+                      </span>
+                    </p>
+                  )}
+                  <div className="max-h-48 space-y-2 overflow-y-auto">
+                    {c.files.map((f) => (
+                      <div
+                        key={f.id}
+                        className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 text-sm"
+                      >
+                        <span className="min-w-0 truncate font-mono text-cyan-300" title={f.name}>
+                          {f.name}
+                        </span>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => deleteFile(f.id)}
+                          loading={deletingFileId === f.id}
+                        >
+                          Xóa
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {c.files.map((f) => (
-                    <div
-                      key={f.id}
-                      className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2 text-sm"
-                    >
-                      <span className="font-mono text-cyan-300">{f.name}</span>
-                      <Button variant="destructive" size="sm" onClick={() => deleteFile(f.id)}>
-                        Xóa
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

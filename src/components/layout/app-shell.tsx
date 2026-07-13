@@ -7,6 +7,7 @@ import {
   Bot,
   FileCode2,
   GitBranch,
+  History,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -18,7 +19,8 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/connect", label: "GitLab", icon: GitBranch },
-  { href: "/reviews", label: "Reviews", icon: FileCode2 },
+  { href: "/reviews", label: "Reviews", icon: FileCode2, exact: true },
+  { href: "/reviews/history", label: "Lịch sử", icon: History },
   { href: "/settings/conventions", label: "Conventions", icon: Settings },
   { href: "/settings/ai", label: "AI Providers", icon: Bot },
 ];
@@ -34,16 +36,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#070b14]/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-          <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4">
+          <Link href="/dashboard" className="flex min-w-0 items-center gap-2 font-semibold">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-cyan-500">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
-            <span>AI Review Validator</span>
+            <span className="truncate">AI Review Validator</span>
           </Link>
-          <Button variant="ghost" size="sm" onClick={() => signOut({ callbackUrl: "/login" })}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            onClick={() => signOut({ callbackUrl: "/login" })}
+          >
             <LogOut className="h-4 w-4" />
-            Đăng xuất
+            <span className="hidden sm:inline">Đăng xuất</span>
           </Button>
         </div>
       </header>
@@ -53,7 +60,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="sticky top-24 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const active = pathname.startsWith(item.href);
+              const active = item.exact
+                ? pathname === item.href
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
                   key={item.href}
@@ -65,8 +74,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       : "text-slate-400 hover:bg-white/5 hover:text-white",
                   )}
                 >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{item.label}</span>
                 </Link>
               );
             })}

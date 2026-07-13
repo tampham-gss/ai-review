@@ -419,13 +419,15 @@ export default function AiSettingsPage() {
               <Button
                 variant="secondary"
                 onClick={testConnection}
-                disabled={testing || (!apiKeyOptional && !form.apiKey)}
+                disabled={!apiKeyOptional && !form.apiKey}
+                loading={testing}
               >
                 {testing ? "Đang kiểm tra..." : "Kiểm tra kết nối"}
               </Button>
               <Button
                 onClick={saveProvider}
-                disabled={saving || (!editingId && !apiKeyOptional && !form.apiKey)}
+                disabled={!editingId && !apiKeyOptional && !form.apiKey}
+                loading={saving}
               >
                 {saving
                   ? "Đang lưu..."
@@ -442,65 +444,67 @@ export default function AiSettingsPage() {
             <CardTitle>Providers đang hoạt động</CardTitle>
             <CardDescription>{providers.length} provider đã cấu hình</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent>
             {providers.length === 0 ? (
               <p className="text-sm text-slate-400">Chưa cấu hình AI provider.</p>
             ) : (
-              providers.map((p) => (
-                <div
-                  key={p.id}
-                  className={`rounded-xl border p-4 transition ${
-                    editingId === p.id
-                      ? "border-violet-500/50 bg-violet-500/5"
-                      : "border-white/10 bg-white/[0.02]"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{getLabel(p.provider)}</p>
-                      <p className="text-sm text-slate-400">{p.model ?? "default model"}</p>
-                      {p.baseUrl && (
-                        <p className="mt-1 truncate font-mono text-xs text-slate-500">{p.baseUrl}</p>
-                      )}
+              <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+                {providers.map((p) => (
+                  <div
+                    key={p.id}
+                    className={`rounded-xl border p-4 transition ${
+                      editingId === p.id
+                        ? "border-violet-500/50 bg-violet-500/5"
+                        : "border-white/10 bg-white/[0.02]"
+                    }`}
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{getLabel(p.provider)}</p>
+                        <p className="truncate text-sm text-slate-400">{p.model ?? "default model"}</p>
+                        {p.baseUrl && (
+                          <p className="mt-1 truncate font-mono text-xs text-slate-500">{p.baseUrl}</p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                        {p.isDefault && <Badge variant="violet">Default</Badge>}
+                        {!p.isEnabled && <Badge variant="high">Tắt</Badge>}
+                        <Badge>Priority {p.priority}</Badge>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {p.isDefault && <Badge variant="violet">Default</Badge>}
-                      {!p.isEnabled && <Badge variant="high">Tắt</Badge>}
-                      <Badge>Priority {p.priority}</Badge>
-                    </div>
-                  </div>
 
-                  <div className="mt-3 flex gap-4 text-sm">
-                    <span className="text-slate-400">
-                      Đã dùng:{" "}
-                      <span className="text-white">{p.tokensUsed.toLocaleString()}</span>
-                    </span>
-                    <span className="text-slate-400">
-                      Còn lại:{" "}
-                      <span className="text-emerald-300">
-                        {p.remaining !== null ? p.remaining.toLocaleString() : "∞"}
+                    <div className="mt-3 flex flex-wrap gap-4 text-sm">
+                      <span className="text-slate-400">
+                        Đã dùng:{" "}
+                        <span className="text-white">{p.tokensUsed.toLocaleString()}</span>
                       </span>
-                    </span>
-                  </div>
+                      <span className="text-slate-400">
+                        Còn lại:{" "}
+                        <span className="text-emerald-300">
+                          {p.remaining !== null ? p.remaining.toLocaleString() : "∞"}
+                        </span>
+                      </span>
+                    </div>
 
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {!p.isDefault && p.isEnabled && (
-                      <Button variant="secondary" size="sm" onClick={() => setReviewDefault(p.id)}>
-                        <Star className="h-3.5 w-3.5" />
-                        Dùng khi review
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {!p.isDefault && p.isEnabled && (
+                        <Button variant="secondary" size="sm" onClick={() => setReviewDefault(p.id)}>
+                          <Star className="h-3.5 w-3.5" />
+                          Dùng khi review
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => startEdit(p)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                        Sửa
                       </Button>
-                    )}
-                    <Button variant="outline" size="sm" onClick={() => startEdit(p)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                      Sửa
-                    </Button>
-                    <Button variant="destructive" size="sm" onClick={() => deleteProvider(p.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Xóa
-                    </Button>
+                      <Button variant="destructive" size="sm" onClick={() => deleteProvider(p.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Xóa
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

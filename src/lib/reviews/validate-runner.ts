@@ -72,9 +72,28 @@ export type ValidateProgressEvent =
       message: string;
     }
   | {
+      type: "cancelled";
+      sessionId: string | null;
+      message: string;
+      percent: number;
+    }
+  | {
       type: "error";
       message: string;
     };
+
+export class ValidateCancelledError extends Error {
+  constructor(message = "Đã dừng validate") {
+    super(message);
+    this.name = "ValidateCancelledError";
+  }
+}
+
+function assertNotCancelled(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw new ValidateCancelledError();
+  }
+}
 
 function calcPercent(step: number, totalSteps: number, base = 10, range = 90) {
   if (totalSteps <= 0) return 100;
@@ -90,13 +109,18 @@ export async function runValidateJob(
   userId: string,
   body: ValidateBody,
   emit: (event: ValidateProgressEvent) => void,
+  signal?: AbortSignal,
 ) {
+  let sessionId: string | null = null;
+
+  try {
   emit({
     type: "phase",
     phase: "init",
     message: "Khởi tạo quy trình validate...",
     percent: 2,
   });
+  assertNotCancelled(signal);
 
   const connection = await prisma.gitlabConnection.findFirst({
     where: { id: body.connectionId, userId },
@@ -113,6 +137,7 @@ export async function runValidateJob(
     message: "Đang lấy danh sách comment chưa resolved từ GitLab...",
     percent: 8,
   });
+  assertNotCancelled(signal);
 
   const comments = await getUnresolvedComments(
     connection.host,
@@ -120,6 +145,7 @@ export async function runValidateJob(
     body.projectId,
     body.mrIid,
   );
+  assertNotCancelled(signal);
 
   emit({
     type: "comments_loaded",
@@ -217,6 +243,8 @@ export async function runValidateJob(
 
   const conventions = await getConventionText(userId, body.selectedCategoryIds);
 
+  assertNotCancelled(signal);
+
   const session = await prisma.reviewSession.create({
     data: {
       userId,
@@ -233,6 +261,7 @@ export async function runValidateJob(
       status: "validating",
     },
   });
+  sessionId = session.id;
 
   if (comments.length === 0) {
     await prisma.reviewSession.update({
@@ -252,6 +281,8 @@ export async function runValidateJob(
   const total = comments.length;
 
   for (let i = 0; i < comments.length; i++) {
+    assertNotCancelled(signal);
+
     const comment = comments[i];
     const current = i + 1;
     const percent = calcPercent(current, total, 25, 75);
@@ -290,6 +321,8 @@ export async function runValidateJob(
       line: comment.line,
       hasMrDiff: !!diffText,
     });
+
+    assertNotCancelled(signal);
 
     await prisma.commentValidationResult.create({
       data: {
@@ -334,6 +367,24 @@ export async function runValidateJob(
   });
 
   return session.id;
+  } catch (error) {
+    if (error instanceof ValidateCancelledError || signal?.aborted) {
+      if (sessionId) {
+        await prisma.reviewSession.update({
+          where: { id: sessionId },
+          data: { status: "cancelled" },
+        });
+      }
+      emit({
+        type: "cancelled",
+        sessionId,
+        message: "Đã dừng validate theo yêu cầu.",
+        percent: 0,
+      });
+      return sessionId;
+    }
+    throw error;
+  }
 }
 
 function toCommentPreview(comment: GitlabUnresolvedComment) {

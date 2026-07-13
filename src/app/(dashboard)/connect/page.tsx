@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toaster";
 import { CheckCircle2, ExternalLink } from "lucide-react";
 
 interface Connection {
@@ -40,22 +41,32 @@ export default function ConnectPage() {
     setSaving(true);
     setMessage("");
 
-    const res = await fetch("/api/gitlab/connections", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, host, token }),
-    });
-    const data = await res.json();
-    setSaving(false);
+    try {
+      const res = await fetch("/api/gitlab/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, host, token }),
+      });
+      const data = await res.json();
 
-    if (!res.ok) {
-      setMessage(data.error ?? "Kết nối thất bại");
-      return;
+      if (!res.ok) {
+        const err = data.error ?? "Kết nối thất bại";
+        setMessage(err);
+        toast.error(err);
+        return;
+      }
+
+      const ok = `Kết nối thành công: ${data.user?.username ?? "OK"}`;
+      setMessage(ok);
+      toast.success(ok);
+      setToken("");
+      await loadConnections();
+    } catch {
+      toast.error("Lỗi kết nối khi lưu GitLab");
+      setMessage("Lỗi kết nối khi lưu GitLab");
+    } finally {
+      setSaving(false);
     }
-
-    setMessage(`Kết nối thành công: ${data.user?.username}`);
-    setToken("");
-    loadConnections();
   }
 
   if (loading) return <PageSkeleton />;
@@ -115,7 +126,7 @@ export default function ConnectPage() {
                   {message}
                 </p>
               )}
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" loading={saving}>
                 {saving ? "Đang kiểm tra..." : "Lưu & kiểm tra kết nối"}
               </Button>
             </form>
@@ -126,33 +137,35 @@ export default function ConnectPage() {
           <CardHeader>
             <CardTitle>Kết nối hiện có</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent>
             {connections.length === 0 ? (
               <p className="text-sm text-slate-400">Chưa có kết nối nào.</p>
             ) : (
-              connections.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] p-4"
-                >
-                  <div>
-                    <p className="font-medium">{c.name}</p>
-                    <a
-                      href={c.host}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 text-sm text-slate-400 hover:text-cyan-300"
-                    >
-                      {c.host}
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
+              <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
+                {connections.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{c.name}</p>
+                      <a
+                        href={c.host}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex min-w-0 items-center gap-1 text-sm text-slate-400 hover:text-cyan-300"
+                      >
+                        <span className="truncate">{c.host}</span>
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                      </a>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {c.isDefault && <Badge variant="violet">Mặc định</Badge>}
+                      <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {c.isDefault && <Badge variant="violet">Mặc định</Badge>}
-                    <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                  </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

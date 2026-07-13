@@ -9,7 +9,11 @@ export async function GET() {
 
   const categories = await prisma.conventionCategory.findMany({
     where: { userId: authResult.userId },
-    include: { files: true, children: true },
+    include: {
+      files: true,
+      children: true,
+      user: { select: { id: true, name: true, email: true } },
+    },
     orderBy: [{ level: "asc" }, { name: "asc" }],
   });
 
