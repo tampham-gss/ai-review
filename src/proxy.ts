@@ -15,8 +15,8 @@ export async function proxy(request: NextRequest) {
     pathname === "/register" ||
     pathname.startsWith("/api/auth");
 
-  // Luôn cho qua auth endpoints — không chặn callback OAuth
-  if (pathname.startsWith("/api/auth")) {
+  // Auth endpoints — luôn cho qua (kể cả /api/auth/error, csrf, session)
+  if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/health")) {
     return NextResponse.next();
   }
 
