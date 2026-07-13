@@ -21,11 +21,11 @@ export const PROVIDER_MODELS: Record<AiProviderName, AiModelOption[]> = {
     { value: "claude-opus-4-20250514", label: "Claude Opus 4" },
   ],
   gemini: [
-    { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", badge: "Free tier" },
-    { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash", badge: "Free tier" },
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+    { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", badge: "Khuyến nghị" },
     { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash", badge: "Có thể đã shutdown" },
+    { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", badge: "Đã shutdown" },
   ],
   deepseek: [
     { value: "deepseek-chat", label: "DeepSeek Chat", badge: "Khuyến nghị" },

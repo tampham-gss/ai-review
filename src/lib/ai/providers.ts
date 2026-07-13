@@ -43,45 +43,92 @@ function formatAiError(
   model?: string,
 ): string {
   const raw = error instanceof Error ? error.message : String(error);
+  const lower = raw.toLowerCase();
 
   if (
     raw.includes("429") ||
-    raw.toLowerCase().includes("quota") ||
+    lower.includes("quota") ||
+    lower.includes("resource_exhausted") ||
     raw.includes("Too Many Requests")
   ) {
     if (provider === "gemini") {
+      const isZeroQuota =
+        /limit:\s*0\b/i.test(raw) ||
+        /free_tier.*limit:\s*0/i.test(raw) ||
+        lower.includes("limit: 0");
+
+      if (isZeroQuota) {
+        return (
+          `Gemini: project/API key đang có free-tier quota = 0 cho model "${model ?? "?"}". ` +
+          `Đổi model sẽ KHÔNG hết lỗi này. Cách xử lý: ` +
+          `(1) Vào https://aistudio.google.com/apikey tạo API key từ project khác, hoặc ` +
+          `(2) Bật Billing cho Google Cloud project (vẫn có free tier sau khi link billing), ` +
+          `(3) Kiểm tra quota tại https://ai.dev/rate-limit. ` +
+          `Chi tiết: ${raw.slice(0, 160)}`
+        );
+      }
+
       return (
-        `Gemini: API key hợp lệ nhưng model "${model ?? "hiện tại"}" hết quota free tier (limit: 0). ` +
-        `Thử đổi Model sang: gemini-2.0-flash-lite hoặc gemini-1.5-flash. ` +
-        `Hoặc bật billing tại https://ai.google.dev/`
+        `Gemini hết quota/rate limit cho model "${model ?? "hiện tại"}". ` +
+        `Đợi vài phút rồi thử lại, hoặc dùng model khác (vd. gemini-2.5-flash-lite). ` +
+        `Chi tiết: ${raw.slice(0, 140)}`
       );
     }
     return "Hết quota/rate limit. Đợi vài phút rồi thử lại, hoặc đổi model/provider.";
   }
 
   if (
-    raw.includes("401") ||
     raw.includes("403") ||
-    raw.toLowerCase().includes("invalid api key") ||
-    raw.toLowerCase().includes("incorrect api key")
+    lower.includes("permission_denied") ||
+    lower.includes("has been denied access")
+  ) {
+    if (provider === "gemini") {
+      return (
+        `Gemini từ chối truy cập (403) model "${model ?? "?"}". ` +
+        `Project có thể bị hạn chế vùng/tài khoản. Tạo API key mới tại https://aistudio.google.com/apikey ` +
+        `hoặc bật billing. Chi tiết: ${raw.slice(0, 160)}`
+      );
+    }
+    return "API key không hợp lệ hoặc không có quyền truy cập.";
+  }
+
+  if (
+    raw.includes("401") ||
+    lower.includes("invalid api key") ||
+    lower.includes("incorrect api key") ||
+    lower.includes("api key not valid")
   ) {
     return "API key không hợp lệ hoặc không có quyền truy cập.";
   }
 
-  if (raw.includes("404") && raw.toLowerCase().includes("model")) {
-    return `Model "${model ?? ""}" không tồn tại hoặc không khả dụng. Kiểm tra tên model.`;
+  if (
+    (raw.includes("404") && lower.includes("model")) ||
+    lower.includes("is not found") ||
+    lower.includes("not found for api version")
+  ) {
+    return (
+      `Model "${model ?? ""}" không tồn tại hoặc đã bị Google shutdown. ` +
+      `Thử: gemini-2.5-flash-lite / gemini-2.5-flash / gemini-2.5-pro.`
+    );
   }
 
   if (raw.length > 280) {
     const geminiPart = raw.split("[GoogleGenerativeAI Error]:")[1]?.trim();
     if (geminiPart) {
       const status = geminiPart.match(/\[(\d{3}[^\]]*)\]/)?.[1];
-      return status ? `Lỗi Gemini [${status}]: ${geminiPart.slice(0, 120)}...` : geminiPart.slice(0, 200);
+      return status
+        ? `Lỗi Gemini [${status}]: ${geminiPart.slice(0, 160)}...`
+        : geminiPart.slice(0, 220);
     }
     return `${raw.slice(0, 200)}...`;
   }
 
   return raw;
+}
+
+/** Chuẩn hóa model id Gemini (bỏ prefix models/). */
+function normalizeGeminiModel(model: string): string {
+  return model.replace(/^models\//i, "").trim();
 }
 
 export async function testAiConnection(params: {
@@ -129,7 +176,9 @@ export async function testAiConnection(params: {
       }
       case "gemini": {
         const genAI = new GoogleGenerativeAI(apiKey);
-        const geminiModel = genAI.getGenerativeModel({ model });
+        const geminiModel = genAI.getGenerativeModel({
+          model: normalizeGeminiModel(model),
+        });
         await geminiModel.generateContent("ping");
         break;
       }
@@ -245,7 +294,7 @@ async function callGemini(
 ): Promise<{ text: string; tokens: number }> {
   const genAI = new GoogleGenerativeAI(provider.apiKey);
   const model = genAI.getGenerativeModel({
-    model: provider.model,
+    model: normalizeGeminiModel(provider.model),
     systemInstruction: system,
     generationConfig: { responseMimeType: "application/json" },
   });

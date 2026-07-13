@@ -47,9 +47,9 @@ export const AI_PROVIDER_REGISTRY: AiProviderMeta[] = [
     id: "gemini",
     label: "Google Gemini",
     type: "gemini",
-    defaultModel: "gemini-2.0-flash-lite",
+    defaultModel: "gemini-2.5-flash-lite",
     description:
-      "Free tier: dùng gemini-2.0-flash-lite hoặc gemini-1.5-flash. Model gemini-2.0-flash có thể limit=0 trên gói free.",
+      "Dùng gemini-2.5-flash-lite / gemini-2.5-flash. Nếu lỗi limit:0 — đổi model không giúp; cần API key project khác hoặc bật Billing tại AI Studio.",
     group: "popular",
   },
   {
