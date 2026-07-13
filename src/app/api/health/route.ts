@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { resolveAuthUrl } from "@/lib/auth.config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,9 +10,15 @@ export const dynamic = "force-dynamic";
  * GET https://your-app.vercel.app/api/health
  */
 export async function GET() {
+  const rawAuthUrl = process.env.AUTH_URL ?? null;
+  const resolvedAuthUrl = resolveAuthUrl() ?? null;
+  const authUrlOk = !!resolvedAuthUrl && /^https?:\/\//i.test(resolvedAuthUrl);
+
   const env = {
     AUTH_SECRET: Boolean(process.env.AUTH_SECRET),
-    AUTH_URL: process.env.AUTH_URL ?? null,
+    AUTH_URL: rawAuthUrl,
+    AUTH_URL_RESOLVED: resolvedAuthUrl,
+    AUTH_URL_OK: authUrlOk,
     AUTH_TRUST_HOST: process.env.AUTH_TRUST_HOST ?? null,
     DATABASE_URL: Boolean(process.env.DATABASE_URL),
     ENCRYPTION_KEY: Boolean(process.env.ENCRYPTION_KEY),
@@ -29,6 +36,7 @@ export async function GET() {
 
   const ok =
     env.AUTH_SECRET &&
+    authUrlOk &&
     env.DATABASE_URL &&
     env.ENCRYPTION_KEY &&
     database === "ok";
@@ -40,7 +48,9 @@ export async function GET() {
       database,
       databaseError,
       hint: !ok
-        ? "Thiếu env hoặc DB lỗi. Vercel → Settings → Environment Variables → set AUTH_SECRET, AUTH_URL=https://ai-review-two.vercel.app, AUTH_TRUST_HOST=true, DATABASE_URL, ENCRYPTION_KEY → Redeploy."
+        ? !authUrlOk
+          ? 'AUTH_URL phải có protocol, ví dụ: https://ai-review-two.vercel.app (hiện tại thiếu https://)'
+          : "Thiếu env hoặc DB lỗi. Vercel → Settings → Environment Variables → Redeploy."
         : null,
     },
     { status: ok ? 200 : 503 },

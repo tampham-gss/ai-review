@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { MarketingShell } from "@/components/layout/marketing-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,6 @@ function authErrorMessage(code: string | null): string | null {
 }
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -71,8 +70,10 @@ function LoginForm() {
         return;
       }
 
-      router.push("/dashboard");
-      router.refresh();
+      // Hard navigation: đảm bảo cookie session được gửi kèm request tiếp theo
+      // (router.push RSC dễ kẹt khi proxy/middleware vừa đọc cookie)
+      const next = searchParams.get("callbackUrl") || "/dashboard";
+      window.location.assign(next.startsWith("/") ? next : "/dashboard");
     } catch {
       setError("Không gọi được /api/auth. Kiểm tra AUTH_SECRET và DATABASE_URL trên Vercel.");
       setLoading(false);

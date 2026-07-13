@@ -1,5 +1,20 @@
 import type { NextAuthConfig } from "next-auth";
 
+/** Chuẩn hóa AUTH_URL — thiếu https:// sẽ làm toàn bộ /api/auth/* trả 500. */
+export function resolveAuthUrl(): string | undefined {
+  const raw = process.env.AUTH_URL?.trim() || process.env.NEXTAUTH_URL?.trim();
+  if (!raw) return undefined;
+
+  if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, "");
+  return `https://${raw.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+}
+
+const authUrl = resolveAuthUrl();
+if (authUrl) {
+  process.env.AUTH_URL = authUrl;
+  process.env.NEXTAUTH_URL = authUrl;
+}
+
 /**
  * Edge-safe config (không import prisma/bcrypt).
  * trustHost: bắt buộc trên Vercel — tránh UntrustedHost → /api/auth/error

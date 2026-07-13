@@ -4,33 +4,38 @@ import type { NextRequest } from "next/server";
 
 /**
  * Next.js 16: convention `proxy` thay cho `middleware`.
- * Dùng getToken (jose / Edge-safe) thay vì NextAuth(...).auth để tránh
- * MIDDLEWARE_INVOCATION_FAILED trên Vercel.
+ * Trên HTTPS (Vercel) cookie là `__Secure-authjs.session-token` —
+ * bắt buộc secureCookie: true khi gọi getToken.
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const isPublic =
-    pathname === "/login" ||
-    pathname === "/register" ||
-    pathname.startsWith("/api/auth");
-
-  // Auth endpoints — luôn cho qua (kể cả /api/auth/error, csrf, session)
+  // Auth / health — luôn cho qua
   if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/health")) {
     return NextResponse.next();
   }
 
+  const isPublic =
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname === "/register";
+
   if (!process.env.AUTH_SECRET) {
-    console.error("[proxy] AUTH_SECRET is missing — set it in Vercel Environment Variables");
+    console.error("[proxy] AUTH_SECRET is missing");
     return new NextResponse(
-      "Server misconfigured: AUTH_SECRET is missing. Add it in Vercel → Settings → Environment Variables.",
+      "Server misconfigured: AUTH_SECRET is missing.",
       { status: 500 },
     );
   }
 
+  const isSecure =
+    request.nextUrl.protocol === "https:" ||
+    request.headers.get("x-forwarded-proto") === "https";
+
   const token = await getToken({
     req: request,
     secret: process.env.AUTH_SECRET,
+    secureCookie: isSecure,
   });
 
   const isLoggedIn = !!token;
@@ -51,11 +56,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Bỏ qua static assets & file có extension.
-     * Không chạy proxy trên _next và favicon.
-     */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

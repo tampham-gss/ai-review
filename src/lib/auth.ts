@@ -4,7 +4,14 @@ import GitLab from "next-auth/providers/gitlab";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
-import { authConfig } from "@/lib/auth.config";
+import { authConfig, resolveAuthUrl } from "@/lib/auth.config";
+
+// Đảm bảo AUTH_URL có https:// trước khi NextAuth khởi tạo
+const authUrl = resolveAuthUrl();
+if (authUrl) {
+  process.env.AUTH_URL = authUrl;
+  process.env.NEXTAUTH_URL = authUrl;
+}
 
 if (!process.env.AUTH_SECRET) {
   console.error(
@@ -14,6 +21,7 @@ if (!process.env.AUTH_SECRET) {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
+  trustHost: true,
   providers: [
     Credentials({
       name: "Email",
