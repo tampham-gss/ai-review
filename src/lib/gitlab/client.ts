@@ -261,11 +261,12 @@ export async function downloadRepositoryArchive(
 
   // 1) GitBeaker — xử lý header/encoding đúng cho mọi GitLab instance
   try {
-    const blob = await api.Repositories.showArchive(projectId, {
+    const archive = await api.Repositories.showArchive(projectId, {
       fileType: "zip",
       sha: ref,
     });
-    if (blob instanceof Blob) {
+    const blob = archive as unknown;
+    if (typeof Blob !== "undefined" && blob instanceof Blob) {
       return Buffer.from(await blob.arrayBuffer());
     }
     if (blob instanceof ArrayBuffer) {
@@ -273,6 +274,12 @@ export async function downloadRepositoryArchive(
     }
     if (Buffer.isBuffer(blob)) {
       return blob;
+    }
+    if (typeof blob === "string") {
+      return Buffer.from(blob, "binary");
+    }
+    if (blob && typeof blob === "object" && "byteLength" in blob) {
+      return Buffer.from(blob as ArrayBuffer);
     }
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));

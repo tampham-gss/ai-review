@@ -10,7 +10,12 @@ export async function POST(request: Request) {
 
   try {
     const body = aiProviderTestSchema.parse(await request.json());
-    const result = await testAiConnection(body);
+    const result = await testAiConnection({
+      provider: body.provider,
+      apiKey: body.apiKey,
+      baseUrl: body.baseUrl,
+      model: body.model,
+    });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {

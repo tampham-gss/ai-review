@@ -12,9 +12,7 @@ export interface ValidateProgressState {
   phaseMessage: string;
   total: number;
   current: number;
-  currentComment: ValidateProgressEvent extends { type: "validating" }
-    ? Extract<ValidateProgressEvent, { type: "validating" }>["comment"]
-    : null;
+  currentComment: Extract<ValidateProgressEvent, { type: "validating" }>["comment"] | null;
   doneItems: Array<{ message: string; verdict?: string }>;
   status: "idle" | "running" | "complete" | "error";
   error?: string;

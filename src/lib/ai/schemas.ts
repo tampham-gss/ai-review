@@ -1,8 +1,11 @@
 import { z } from "zod";
-import { AI_PROVIDER_IDS } from "@/lib/ai/provider-registry";
+import {
+  AI_PROVIDER_IDS,
+  type AiProviderName,
+} from "@/lib/ai/provider-registry";
 
 export const aiProviderIdSchema = z.enum(
-  AI_PROVIDER_IDS as [string, ...string[]],
+  AI_PROVIDER_IDS as [AiProviderName, ...AiProviderName[]],
 );
 
 export const aiProviderPayloadSchema = z.object({
