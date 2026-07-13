@@ -1,0 +1,336 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { PageSkeleton } from "@/components/ui/skeleton";
+import {
+  ValidateProgressPanel,
+  applyProgressEvent,
+  initialProgressState,
+  streamValidate,
+} from "@/components/reviews/validate-progress";
+import { AiProviderPicker } from "@/components/reviews/ai-provider-picker";
+import { AlertTriangle, Upload, Zap } from "lucide-react";
+
+interface Connection {
+  id: string;
+  name: string;
+  host: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  pathWithNamespace: string;
+}
+
+interface MR {
+  iid: number;
+  title: string;
+  sourceBranch: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  level: number;
+}
+
+export default function NewReviewPage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [mrs, setMrs] = useState<MR[]>([]);
+
+  const [connectionId, setConnectionId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [projectPath, setProjectPath] = useState("");
+  const [mrIid, setMrIid] = useState<number | null>(null);
+  const [mrTitle, setMrTitle] = useState("");
+  const [sourceBranch, setSourceBranch] = useState("");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [providerId, setProviderId] = useState<string | null>(null);
+  const [sourceType, setSourceType] = useState<"gitlab" | "zip">("gitlab");
+  const [zipBase64, setZipBase64] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [progress, setProgress] = useState(initialProgressState);
+  const [showProgress, setShowProgress] = useState(false);
+
+  useEffect(() => {
+    async function init() {
+      const [connRes, catRes] = await Promise.all([
+        fetch("/api/gitlab/connections"),
+        fetch("/api/conventions/categories"),
+      ]);
+      const connData = await connRes.json();
+      const catData = await catRes.json();
+      const cats = catData.categories ?? [];
+      setConnections(connData.connections ?? []);
+      setCategories(cats);
+      // Mặc định chọn tất cả convention để tránh quên chọn
+      setSelectedCategories(cats.map((c: Category) => c.id));
+      if (connData.connections?.[0]) setConnectionId(connData.connections[0].id);
+      setLoading(false);
+    }
+    init();
+  }, []);
+
+  async function loadProjects() {
+    if (!connectionId) return;
+    const res = await fetch(`/api/gitlab/projects?connectionId=${connectionId}`);
+    const data = await res.json();
+    setProjects(data.projects ?? []);
+  }
+
+  async function loadMrs(pid: string) {
+    const res = await fetch(
+      `/api/gitlab/merge-requests?connectionId=${connectionId}&projectId=${pid}`,
+    );
+    const data = await res.json();
+    setMrs(data.mergeRequests ?? []);
+  }
+
+  function toggleCategory(id: string) {
+    setSelectedCategories((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  async function handleZipFile(file: File) {
+    const buffer = await file.arrayBuffer();
+    const base64 = btoa(
+      new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ""),
+    );
+    setZipBase64(base64);
+    setSourceType("zip");
+  }
+
+  async function runValidate() {
+    if (!connectionId || !projectId || !mrIid || !sourceBranch) {
+      setError("Vui lòng chọn đủ GitLab project, MR và branch");
+      return;
+    }
+    if (!providerId) {
+      setError("Vui lòng chọn AI provider để validate");
+      return;
+    }
+
+    setRunning(true);
+    setError("");
+    setProgress({ ...initialProgressState, status: "running", phaseMessage: "Đang kết nối..." });
+    setShowProgress(true);
+
+    try {
+      const sessionId = await streamValidate(
+        {
+          connectionId,
+          projectId,
+          projectPath,
+          mrIid,
+          mrTitle,
+          sourceBranch,
+          selectedCategoryIds: selectedCategories,
+          providerId,
+          sourceType,
+          zipBase64: zipBase64 ?? undefined,
+        },
+        (event) => setProgress((prev) => applyProgressEvent(prev, event)),
+      );
+
+      if (sessionId) {
+        await new Promise((r) => setTimeout(r, 600));
+        router.push(`/reviews/${sessionId}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Validate thất bại";
+      setError(message);
+      setProgress((prev) => ({ ...prev, status: "error", error: message }));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  if (loading) return <PageSkeleton />;
+
+  return (
+    <div className="space-y-6">
+      <ValidateProgressPanel
+        state={progress}
+        visible={showProgress}
+        onClose={() => setShowProgress(false)}
+      />
+      <div>
+        <h1 className="text-3xl font-bold text-white">Review mới</h1>
+        <p className="mt-1 text-slate-400">
+          Chỉ lấy comment chưa resolved trên MR đã chọn.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>AI Provider</CardTitle>
+          <CardDescription>Chọn model dùng để validate comment trên MR này.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AiProviderPicker value={providerId} onChange={setProviderId} />
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>1. GitLab & MR</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <select
+              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white"
+              value={connectionId}
+              onChange={(e) => setConnectionId(e.target.value)}
+            >
+              {connections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} — {c.host}
+                </option>
+              ))}
+            </select>
+            <Button variant="secondary" onClick={loadProjects}>
+              Tải projects
+            </Button>
+            <select
+              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white"
+              value={projectId}
+              onChange={(e) => {
+                const p = projects.find((x) => x.id === e.target.value);
+                setProjectId(e.target.value);
+                setProjectPath(p?.pathWithNamespace ?? "");
+                loadMrs(e.target.value);
+              }}
+            >
+              <option value="">Chọn project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.pathWithNamespace}
+                </option>
+              ))}
+            </select>
+            <select
+              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white"
+              value={mrIid ?? ""}
+              onChange={(e) => {
+                const iid = Number(e.target.value);
+                const mr = mrs.find((m) => m.iid === iid);
+                setMrIid(iid);
+                setMrTitle(mr?.title ?? "");
+                setSourceBranch(mr?.sourceBranch ?? "");
+              }}
+            >
+              <option value="">Chọn Merge Request</option>
+              {mrs.map((mr) => (
+                <option key={mr.iid} value={mr.iid}>
+                  !{mr.iid} — {mr.title}
+                </option>
+              ))}
+            </select>
+            <Input value={sourceBranch} readOnly placeholder="Source branch" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>2. Source & Convention</CardTitle>
+            <CardDescription>
+              Mặc định lấy từ GitLab API. Kéo thả ZIP để override.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div
+              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-white/20 bg-white/[0.02] p-8 transition hover:border-violet-500/50"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                if (file) handleZipFile(file);
+              }}
+              onClick={() => {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = ".zip";
+                input.onchange = () => {
+                  const file = input.files?.[0];
+                  if (file) handleZipFile(file);
+                };
+                input.click();
+              }}
+            >
+              <Upload className="mb-2 h-8 w-8 text-violet-400" />
+              <p className="text-sm text-slate-300">Kéo thả source ZIP vào đây</p>
+              <p className="text-xs text-slate-500">Hoặc click để chọn file</p>
+            </div>
+
+            {sourceType === "zip" && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  Đang dùng source ZIP upload — có thể không khớp commit trên GitLab.
+                  Hãy đảm bảo ZIP đúng branch <strong>{sourceBranch}</strong>.
+                </p>
+              </div>
+            )}
+
+            {sourceType === "gitlab" && (
+              <p className="text-sm text-emerald-400">✓ Sẽ lấy source trực tiếp từ GitLab API</p>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-300">
+                Convention (mặc định đã chọn hết — bỏ chọn nếu không cần)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {categories.length === 0 ? (
+                  <p className="text-xs text-slate-500">Chưa có convention — vào Settings để upload.</p>
+                ) : (
+                  categories.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleCategory(c.id)}
+                    className={`rounded-full px-3 py-1 text-xs transition ${
+                      selectedCategories.includes(c.id)
+                        ? "bg-violet-500/30 text-violet-200 ring-1 ring-violet-500/50"
+                        : "bg-white/5 text-slate-400 hover:bg-white/10"
+                    }`}
+                  >
+                    L{c.level} {c.name}
+                  </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardContent className="flex flex-col items-start gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium text-white">3. Chạy validate</p>
+            <p className="text-sm text-slate-400">
+              Chỉ quét comment chưa resolve; ưu tiên MR diff + file/line trong note.
+            </p>
+            {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+          </div>
+          <Button size="lg" onClick={runValidate} disabled={running || !providerId}>
+            <Zap className="h-4 w-4" />
+            {running ? "Đang quét..." : "Bắt đầu validate"}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
