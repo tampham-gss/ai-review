@@ -10,7 +10,7 @@ import {
 import type { AiProviderName } from "@/lib/ai/provider-registry";
 
 const selectClassName =
-  "h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white";
+  "h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground";
 
 interface ModelSelectProps {
   provider: AiProviderName;

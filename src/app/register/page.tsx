@@ -72,7 +72,7 @@ export default function RegisterPage() {
               {loading ? "Đang tạo..." : "Đăng ký"}
             </Button>
           </form>
-          <p className="mt-4 text-center text-sm text-slate-400">
+          <p className="mt-4 text-center text-sm text-muted">
             Đã có tài khoản?{" "}
             <Link href="/login" className="text-violet-300 hover:underline">
               Đăng nhập

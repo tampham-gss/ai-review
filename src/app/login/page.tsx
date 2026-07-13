@@ -117,10 +117,10 @@ function LoginForm() {
           <>
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-white/10" />
+                <span className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-transparent px-2 text-slate-500">hoặc</span>
+                <span className="bg-transparent px-2 text-muted-soft">hoặc</span>
               </div>
             </div>
 
@@ -134,13 +134,13 @@ function LoginForm() {
           </>
         )}
 
-        <p className="text-center text-sm text-slate-400">
+        <p className="text-center text-sm text-muted">
           Chưa có tài khoản?{" "}
           <Link href="/register" className="text-violet-300 hover:underline">
             Đăng ký
           </Link>
         </p>
-        <p className="text-center text-xs text-slate-500">
+        <p className="text-center text-xs text-muted-soft">
           GitLab nội bộ (vd. gitlab.gss-sol.com): đăng ký/đăng nhập email → Connect GitLab bằng PAT.
         </p>
       </CardContent>
@@ -151,7 +151,7 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <MarketingShell>
-      <Suspense fallback={<p className="text-slate-400">Đang tải...</p>}>
+      <Suspense fallback={<p className="text-muted">Đang tải...</p>}>
         <LoginForm />
       </Suspense>
     </MarketingShell>

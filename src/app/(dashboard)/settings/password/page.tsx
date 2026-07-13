@@ -93,13 +93,13 @@ export default function ChangePasswordPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="flex items-center gap-2 text-3xl font-bold text-white">
+        <h1 className="flex items-center gap-2 text-3xl font-bold text-foreground">
           <KeyRound className="h-7 w-7 text-violet-400" />
           Đổi mật khẩu
         </h1>
-        <p className="mt-1 text-slate-400">
+        <p className="mt-1 text-muted">
           Đổi bằng mật khẩu hiện tại, hoặc nhận OTP qua email{" "}
-          <span className="text-slate-300">{session?.user?.email}</span>.
+          <span className="text-muted">{session?.user?.email}</span>.
         </p>
       </div>
 
@@ -159,7 +159,7 @@ export default function ChangePasswordPage() {
                   </Button>
                 </div>
                 {devOtp && (
-                  <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
                     Dev OTP: <span className="font-mono font-bold">{devOtp}</span>
                   </p>
                 )}

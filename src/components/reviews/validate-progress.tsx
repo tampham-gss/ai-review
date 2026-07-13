@@ -141,10 +141,10 @@ export function ValidateProgressPanel({
         <CardContent className="space-y-5">
           <div>
             <div className="mb-2 flex items-center justify-between gap-2 text-sm">
-              <span className="shrink-0 text-slate-400">Tiến độ</span>
+              <span className="shrink-0 text-muted">Tiến độ</span>
               <span className="font-mono font-medium text-violet-300">{state.percent}%</span>
             </div>
-            <div className="h-3 overflow-hidden rounded-full bg-white/10">
+            <div className="h-3 overflow-hidden rounded-full bg-surface-hover">
               <div
                 className={cn(
                   "h-full rounded-full transition-all duration-500 ease-out",
@@ -159,10 +159,10 @@ export function ValidateProgressPanel({
             </div>
           </div>
 
-          <p className="break-words text-sm text-slate-300">{state.phaseMessage}</p>
+          <p className="break-words text-sm text-muted">{state.phaseMessage}</p>
 
           {state.total > 0 && (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-soft">
               Comment: {state.current}/{state.total}
             </p>
           )}
@@ -178,7 +178,7 @@ export function ValidateProgressPanel({
                   <Badge variant="high">{state.currentComment.severity}</Badge>
                 )}
                 {state.currentComment.filePath && (
-                  <span className="flex min-w-0 items-center gap-1 font-mono text-xs text-cyan-300">
+                  <span className="flex min-w-0 items-center gap-1 font-mono text-xs text-cyan-700 dark:text-cyan-300">
                     <FileCode2 className="h-3 w-3 shrink-0" />
                     <span className="truncate">
                       {state.currentComment.filePath}
@@ -187,8 +187,8 @@ export function ValidateProgressPanel({
                   </span>
                 )}
               </div>
-              <p className="truncate text-xs text-slate-400">{state.currentComment.author}</p>
-              <p className="mt-2 line-clamp-3 break-words text-sm text-slate-200">
+              <p className="truncate text-xs text-muted">{state.currentComment.author}</p>
+              <p className="mt-2 line-clamp-3 break-words text-sm text-foreground">
                 {state.currentComment.preview}
               </p>
             </div>
@@ -196,14 +196,14 @@ export function ValidateProgressPanel({
 
           {state.doneItems.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-soft">
                 Đã xử lý
               </p>
               <div className="max-h-36 space-y-1.5 overflow-y-auto">
                 {state.doneItems.map((item, idx) => (
                   <div
                     key={idx}
-                    className="flex items-start gap-2 rounded-lg bg-white/[0.03] px-3 py-2 text-xs text-slate-400"
+                    className="flex items-start gap-2 rounded-lg bg-surface px-3 py-2 text-xs text-muted"
                   >
                     <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
                     <span className="min-w-0 break-words line-clamp-2">{item.message}</span>

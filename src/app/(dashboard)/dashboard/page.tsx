@@ -27,8 +27,8 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-white">Dashboard</h1>
-        <p className="mt-1 text-slate-400">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard</h1>
+        <p className="mt-1 text-muted">
           Kiểm tra review GitLab bằng AI — chỉ xử lý comment chưa resolved.
         </p>
       </div>
@@ -37,14 +37,14 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <GitBranch className="h-4 w-4 text-cyan-400" />
+              <GitBranch className="h-4 w-4 text-cyan-700 dark:text-cyan-400" />
               GitLab
             </CardTitle>
             <CardDescription>Kết nối self-hosted & gitlab.com</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold">{connections}</p>
-            <p className="text-sm text-slate-400">kết nối đang hoạt động</p>
+            <p className="text-sm text-muted">kết nối đang hoạt động</p>
           </CardContent>
         </Card>
 
@@ -58,7 +58,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold">{totalTokensUsed.toLocaleString()}</p>
-            <p className="text-sm text-slate-400">tokens đã dùng</p>
+            <p className="text-sm text-muted">tokens đã dùng</p>
           </CardContent>
         </Card>
 
@@ -72,7 +72,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold">{sessionCount}</p>
-            <p className="text-sm text-slate-400">phiên trong lịch sử</p>
+            <p className="text-sm text-muted">phiên trong lịch sử</p>
           </CardContent>
         </Card>
       </div>
@@ -103,7 +103,7 @@ export default async function DashboardPage() {
           ].map((step) => (
             <div
               key={step}
-              className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-sm text-slate-300"
+              className="rounded-xl border border-border bg-surface p-4 text-sm text-muted"
             >
               {step}
             </div>
@@ -130,13 +130,13 @@ export default async function DashboardPage() {
                   <Link
                     key={s.id}
                     href={`/reviews/${s.id}`}
-                    className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 transition hover:bg-white/[0.05] sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 transition hover:bg-surface-hover sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0">
                       <p className="truncate font-medium">
                         {s.projectPath} !{s.mrIid}
                       </p>
-                      <p className="truncate text-sm text-slate-400">
+                      <p className="truncate text-sm text-muted">
                         {s.sourceBranch} · {s.status}
                       </p>
                     </div>

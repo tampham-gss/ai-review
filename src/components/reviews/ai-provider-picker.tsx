@@ -95,8 +95,8 @@ export function AiProviderPicker({
 
   if (loading) {
     return (
-      <div className={cn("rounded-xl border border-white/10 bg-white/[0.02] p-4", className)}>
-        <p className="text-sm text-slate-400">Đang tải AI providers...</p>
+      <div className={cn("rounded-xl border border-border bg-surface p-4", className)}>
+        <p className="text-sm text-muted">Đang tải AI providers...</p>
       </div>
     );
   }
@@ -104,7 +104,9 @@ export function AiProviderPicker({
   if (providers.length === 0) {
     return (
       <div className={cn("rounded-xl border border-amber-500/30 bg-amber-500/10 p-4", className)}>
-        <p className="text-sm text-amber-200">Chưa có AI provider nào được bật.</p>
+        <p className="text-sm text-amber-900 dark:text-amber-200">
+          Chưa có AI provider nào được bật.
+        </p>
         <Link href="/settings/ai" className="mt-2 inline-block">
           <Button size="sm" variant="secondary">
             <Settings className="h-3.5 w-3.5" />
@@ -119,7 +121,7 @@ export function AiProviderPicker({
     <div className={cn("space-y-3", className)}>
       <div className="flex flex-wrap items-center gap-2">
         <Bot className="h-4 w-4 text-violet-400" />
-        <p className="text-sm font-medium text-slate-300">Model AI đang chọn</p>
+        <p className="text-sm font-medium text-muted">Model AI đang chọn</p>
         {selected && (
           <Badge variant="violet" className="font-mono text-xs">
             {formatProviderChoice(selected)}
@@ -147,14 +149,16 @@ export function AiProviderPicker({
               className={cn(
                 "min-w-[140px] max-w-full rounded-xl border px-3 py-2 text-left text-xs transition",
                 active
-                  ? "border-violet-500/50 bg-violet-500/15 text-violet-100 ring-1 ring-violet-500/40"
-                  : "border-white/10 bg-white/[0.02] text-slate-400 hover:border-white/20 hover:bg-white/5",
+                  ? "border-violet-500/50 bg-violet-500/15 text-violet-900 ring-1 ring-violet-500/40 dark:text-violet-100"
+                  : "border-border bg-surface text-muted hover:border-border hover:bg-surface-hover",
               )}
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="truncate font-medium">{getProviderLabel(p.provider)}</p>
                 {isBest && (
-                  <span className="shrink-0 text-[10px] text-amber-300">Best</span>
+                  <span className="shrink-0 text-[10px] text-amber-700 dark:text-amber-300">
+                    Best
+                  </span>
                 )}
               </div>
               <p className="mt-0.5 truncate font-mono text-[11px] opacity-80">
@@ -166,14 +170,16 @@ export function AiProviderPicker({
                 </div>
               )}
               {p.isDefault && (
-                <span className="mt-1 inline-block text-[10px] text-cyan-400">Mặc định</span>
+                <span className="mt-1 inline-block text-[10px] text-cyan-700 dark:text-cyan-400">
+                  Mặc định
+                </span>
               )}
             </button>
           );
         })}
       </div>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted-soft">
         Sao phản ánh độ mạnh model + hiệu suất thực tế. Nhấn để đổi model cho phiên review.
       </p>
     </div>

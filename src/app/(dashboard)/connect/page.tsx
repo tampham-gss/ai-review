@@ -189,29 +189,29 @@ export default function ConnectPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white">Kết nối GitLab</h1>
-        <p className="mt-1 text-slate-400">
+        <h1 className="text-3xl font-bold text-foreground">Kết nối GitLab</h1>
+        <p className="mt-1 text-muted">
           Hỗ trợ gitlab.com (OAuth) và self-hosted qua Personal Access Token.
         </p>
       </div>
 
       <Card className="border-amber-500/20 bg-amber-500/5">
         <CardHeader>
-          <CardTitle className="text-base text-amber-200">GitLab nội bộ (LDAP)</CardTitle>
+          <CardTitle className="text-base text-amber-900 dark:text-amber-200">GitLab nội bộ (LDAP)</CardTitle>
           <CardDescription>
             Với instance như{" "}
             <a
               href="https://gitlab.gss-sol.com/"
               target="_blank"
               rel="noreferrer"
-              className="text-cyan-300 hover:underline"
+              className="text-cyan-700 hover:underline dark:text-cyan-300"
             >
               gitlab.gss-sol.com
             </a>
-            , tạo PAT với scope <code className="text-amber-200">api</code> (full access đọc/ghi MR).
+            , tạo PAT với scope <code className="text-amber-900 dark:text-amber-200">api</code> (full access đọc/ghi MR).
           </CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-slate-300">
+        <CardContent className="text-sm text-muted">
           <ol className="list-decimal space-y-1 pl-5">
             <li>User Settings → Access Tokens</li>
             <li>
@@ -296,7 +296,7 @@ export default function ConnectPage() {
           </CardHeader>
           <CardContent>
             {connections.length === 0 ? (
-              <p className="text-sm text-slate-400">Chưa có kết nối nào.</p>
+              <p className="text-sm text-muted">Chưa có kết nối nào.</p>
             ) : (
               <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
                 {connections.map((c) => (
@@ -305,7 +305,7 @@ export default function ConnectPage() {
                     className={`rounded-xl border p-4 ${
                       editingId === c.id
                         ? "border-violet-500/40 bg-violet-500/5"
-                        : "border-white/10 bg-white/[0.02]"
+                        : "border-border bg-surface"
                     }`}
                   >
                     <div className="flex min-w-0 items-start justify-between gap-3">
@@ -315,7 +315,7 @@ export default function ConnectPage() {
                           href={c.host}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex min-w-0 items-center gap-1 text-sm text-slate-400 hover:text-cyan-300"
+                          className="flex min-w-0 items-center gap-1 text-sm text-muted hover:text-cyan-700 dark:hover:text-cyan-300"
                         >
                           <span className="truncate">{c.host}</span>
                           <ExternalLink className="h-3 w-3 shrink-0" />

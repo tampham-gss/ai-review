@@ -93,11 +93,11 @@ export default function ReviewHistoryPage() {
               </Button>
             </Link>
           </div>
-          <h1 className="flex items-center gap-2 text-3xl font-bold text-white">
+          <h1 className="flex items-center gap-2 text-3xl font-bold text-foreground">
             <History className="h-7 w-7 shrink-0 text-violet-400" />
             <span className="min-w-0">Lịch sử review</span>
           </h1>
-          <p className="mt-1 text-slate-400">
+          <p className="mt-1 text-muted">
             {total} phiên đã chạy — chọn một phiên để xem chi tiết kết quả.
           </p>
         </div>
@@ -118,29 +118,29 @@ export default function ReviewHistoryPage() {
         </CardHeader>
         <CardContent>
           {sessions.length === 0 ? (
-            <p className="text-sm text-slate-400">Chưa có phiên review nào.</p>
+            <p className="text-sm text-muted">Chưa có phiên review nào.</p>
           ) : (
             <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
               {sessions.map((s) => (
                 <Link
                   key={s.id}
                   href={`/reviews/${s.id}`}
-                  className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 transition hover:bg-white/[0.05] sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 transition hover:bg-surface-hover sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <p className="truncate font-medium text-white">
+                      <p className="truncate font-medium text-foreground">
                         {s.projectPath} !{s.mrIid}
                       </p>
                       {statusBadge(s.status)}
                     </div>
                     {s.mrTitle && (
-                      <p className="truncate text-sm text-slate-300">{s.mrTitle}</p>
+                      <p className="truncate text-sm text-muted">{s.mrTitle}</p>
                     )}
-                    <p className="truncate text-sm text-slate-400">
+                    <p className="truncate text-sm text-muted">
                       {s.sourceBranch} · {formatDate(s.createdAt)}
                     </p>
-                    <p className="truncate text-xs text-slate-500">
+                    <p className="truncate text-xs text-muted-soft">
                       Người chạy: {s.user.name || s.user.email}
                     </p>
                   </div>

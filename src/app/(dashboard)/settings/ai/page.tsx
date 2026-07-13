@@ -306,8 +306,8 @@ export default function AiSettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white">AI Providers</h1>
-        <p className="mt-1 text-slate-400">
+        <h1 className="text-3xl font-bold text-foreground">AI Providers</h1>
+        <p className="mt-1 text-muted">
           Hỗ trợ OpenAI, Claude, Gemini, DeepSeek, Groq, Cerebras, OpenRouter, Ollama, Cursor...
         </p>
       </div>
@@ -328,7 +328,7 @@ export default function AiSettingsPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <select
-              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white"
+              className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground"
               value={form.provider}
               onChange={(e) => changeProvider(e.target.value as AiProviderName)}
             >
@@ -376,7 +376,7 @@ export default function AiSettingsPage() {
               onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
             />
             <div className="space-y-1.5">
-              <label className="text-sm text-slate-400">Model</label>
+              <label className="text-sm text-muted">Model</label>
               <ModelSelect
                 provider={form.provider}
                 value={form.model}
@@ -399,21 +399,21 @@ export default function AiSettingsPage() {
             </div>
 
             <div className="flex flex-wrap gap-4 text-sm">
-              <label className="flex items-center gap-2 text-slate-300">
+              <label className="flex items-center gap-2 text-muted">
                 <input
                   type="checkbox"
                   checked={form.isDefault}
                   onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
-                  className="rounded border-white/20"
+                  className="rounded border-border"
                 />
                 Mặc định
               </label>
-              <label className="flex items-center gap-2 text-slate-300">
+              <label className="flex items-center gap-2 text-muted">
                 <input
                   type="checkbox"
                   checked={form.isEnabled}
                   onChange={(e) => setForm((f) => ({ ...f, isEnabled: e.target.checked }))}
-                  className="rounded border-white/20"
+                  className="rounded border-border"
                 />
                 Bật
               </label>
@@ -458,7 +458,7 @@ export default function AiSettingsPage() {
           </CardHeader>
           <CardContent>
             {providers.length === 0 ? (
-              <p className="text-sm text-slate-400">Chưa cấu hình AI provider.</p>
+              <p className="text-sm text-muted">Chưa cấu hình AI provider.</p>
             ) : (
               <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
                 {providers.map((p) => (
@@ -467,13 +467,13 @@ export default function AiSettingsPage() {
                     className={`rounded-xl border p-4 transition ${
                       editingId === p.id
                         ? "border-violet-500/50 bg-violet-500/5"
-                        : "border-white/10 bg-white/[0.02]"
+                        : "border-border bg-surface"
                     }`}
                   >
                     <div className="flex min-w-0 items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-medium">{getLabel(p.provider)}</p>
-                        <p className="truncate text-sm text-slate-400">{p.model ?? "default model"}</p>
+                        <p className="truncate text-sm text-muted">{p.model ?? "default model"}</p>
                         {p.rating && (
                           <div className="mt-2 space-y-0.5">
                             <StarRating
@@ -481,13 +481,13 @@ export default function AiSettingsPage() {
                               showValue
                               label={p.rating.label}
                             />
-                            <p className="text-[11px] text-slate-500" title={p.rating.reason}>
+                            <p className="text-[11px] text-muted-soft" title={p.rating.reason}>
                               {p.rating.reason}
                             </p>
                           </div>
                         )}
                         {p.baseUrl && (
-                          <p className="mt-1 truncate font-mono text-xs text-slate-500">{p.baseUrl}</p>
+                          <p className="mt-1 truncate font-mono text-xs text-muted-soft">{p.baseUrl}</p>
                         )}
                       </div>
                       <div className="flex shrink-0 flex-wrap justify-end gap-2">
@@ -498,11 +498,11 @@ export default function AiSettingsPage() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-4 text-sm">
-                      <span className="text-slate-400">
+                      <span className="text-muted">
                         Đã dùng:{" "}
-                        <span className="text-white">{p.tokensUsed.toLocaleString()}</span>
+                        <span className="text-foreground">{p.tokensUsed.toLocaleString()}</span>
                       </span>
-                      <span className="text-slate-400">
+                      <span className="text-muted">
                         Còn lại:{" "}
                         <span className="text-emerald-300">
                           {p.remaining !== null ? p.remaining.toLocaleString() : "∞"}

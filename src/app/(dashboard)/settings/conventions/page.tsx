@@ -186,7 +186,7 @@ export default function ConventionsPage() {
             <CardHeader className="flex flex-row items-start justify-between gap-3 shrink-0">
               <div className="min-w-0">
                 <CardTitle className="flex items-center gap-2 text-lg">
-                  <FileText className="h-5 w-5 shrink-0 text-cyan-400" />
+                  <FileText className="h-5 w-5 shrink-0 text-cyan-700 dark:text-cyan-400" />
                   <span className="truncate">Preview / Sửa convention</span>
                 </CardTitle>
                 <CardDescription className="truncate">
@@ -223,8 +223,8 @@ export default function ConventionsPage() {
       )}
 
       <div>
-        <h1 className="text-3xl font-bold text-white">Convention Rules</h1>
-        <p className="mt-1 text-slate-400">
+        <h1 className="text-3xl font-bold text-foreground">Convention Rules</h1>
+        <p className="mt-1 text-muted">
           Upload file .md theo level — chọn nhiều category khi validate.
         </p>
       </div>
@@ -256,7 +256,7 @@ export default function ConventionsPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <select
-              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white"
+              className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground"
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
             >
@@ -294,20 +294,20 @@ export default function ConventionsPage() {
         </CardHeader>
         <CardContent>
           {categories.length === 0 ? (
-            <p className="text-sm text-slate-400">Chưa có convention nào.</p>
+            <p className="text-sm text-muted">Chưa có convention nào.</p>
           ) : (
             <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
               {categories.map((c) => (
-                <div key={c.id} className="rounded-xl border border-white/10 p-4">
+                <div key={c.id} className="rounded-xl border border-border p-4">
                   <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
                     <Badge variant="violet" className="shrink-0">
                       Level {c.level}
                     </Badge>
                     <h3 className="min-w-0 truncate font-medium">{c.name}</h3>
-                    <span className="shrink-0 text-sm text-slate-500">{c.files.length} files</span>
+                    <span className="shrink-0 text-sm text-muted-soft">{c.files.length} files</span>
                   </div>
                   {c.user && (
-                    <p className="mb-3 flex min-w-0 items-center gap-1.5 text-xs text-slate-400">
+                    <p className="mb-3 flex min-w-0 items-center gap-1.5 text-xs text-muted">
                       <User className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">
                         Tạo bởi: {c.user.name || c.user.email}
@@ -316,12 +316,12 @@ export default function ConventionsPage() {
                   )}
                   <div className="max-h-48 space-y-2 overflow-y-auto">
                     {c.files.length === 0 ? (
-                      <p className="text-xs text-slate-500">Chưa có file.</p>
+                      <p className="text-xs text-muted-soft">Chưa có file.</p>
                     ) : (
                       c.files.map((f) => (
                         <div
                           key={f.id}
-                          className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 text-sm"
+                          className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2 text-sm"
                         >
                           <button
                             type="button"
@@ -329,8 +329,8 @@ export default function ConventionsPage() {
                             className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-90"
                             title="Xem / sửa nội dung"
                           >
-                            <Eye className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                            <span className="min-w-0 truncate font-mono text-cyan-300">
+                            <Eye className="h-3.5 w-3.5 shrink-0 text-muted-soft" />
+                            <span className="min-w-0 truncate font-mono text-cyan-700 dark:text-cyan-300">
                               {f.name}
                             </span>
                           </button>

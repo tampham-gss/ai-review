@@ -4,7 +4,7 @@ function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>)
   return (
     <div
       className={cn(
-        "animate-pulse rounded-xl bg-gradient-to-r from-white/5 via-white/10 to-white/5 bg-[length:200%_100%] animate-shimmer",
+        "animate-pulse rounded-xl bg-gradient-to-r from-surface via-surface-hover to-surface bg-[length:200%_100%] animate-shimmer",
         className,
       )}
       {...props}
@@ -14,7 +14,7 @@ function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>)
 
 function CommentSkeleton() {
   return (
-    <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+    <div className="space-y-3 rounded-2xl border border-border bg-surface p-5">
       <div className="flex items-center gap-3">
         <Skeleton className="h-9 w-9 rounded-full" />
         <div className="flex-1 space-y-2">

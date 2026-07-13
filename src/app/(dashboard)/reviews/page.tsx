@@ -226,8 +226,8 @@ export default function NewReviewPage() {
       />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-3xl font-bold text-white">Review mới</h1>
-          <p className="mt-1 text-slate-400">
+          <h1 className="text-3xl font-bold text-foreground">Review mới</h1>
+          <p className="mt-1 text-muted">
             Chỉ lấy comment chưa resolved trên MR đã chọn.
           </p>
         </div>
@@ -256,7 +256,7 @@ export default function NewReviewPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <select
-              className="h-10 w-full truncate rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white"
+              className="h-10 w-full truncate rounded-xl border border-border bg-surface px-3 text-sm text-foreground"
               value={connectionId}
               onChange={(e) => setConnectionId(e.target.value)}
             >
@@ -270,7 +270,7 @@ export default function NewReviewPage() {
               {loadingProjects ? "Đang tải..." : "Tải projects"}
             </Button>
             <select
-              className="h-10 w-full truncate rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white"
+              className="h-10 w-full truncate rounded-xl border border-border bg-surface px-3 text-sm text-foreground"
               value={projectId}
               onChange={(e) => {
                 const p = projects.find((x) => x.id === e.target.value);
@@ -286,9 +286,9 @@ export default function NewReviewPage() {
                 </option>
               ))}
             </select>
-            <div className="max-h-48 overflow-y-auto rounded-xl border border-white/10">
+            <div className="max-h-48 overflow-y-auto rounded-xl border border-border">
               <select
-                className="h-10 w-full truncate rounded-xl border-0 bg-white/5 px-3 text-sm text-white"
+                className="h-10 w-full truncate rounded-xl border-0 bg-surface px-3 text-sm text-foreground"
                 value={mrIid ?? ""}
                 onChange={(e) => {
                   const iid = Number(e.target.value);
@@ -319,7 +319,7 @@ export default function NewReviewPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div
-              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-white/20 bg-white/[0.02] p-8 transition hover:border-violet-500/50"
+              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface p-8 transition hover:border-violet-500/50"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
@@ -338,12 +338,12 @@ export default function NewReviewPage() {
               }}
             >
               <Upload className="mb-2 h-8 w-8 text-violet-400" />
-              <p className="text-sm text-slate-300">Kéo thả source ZIP vào đây</p>
-              <p className="text-xs text-slate-500">Hoặc click để chọn file</p>
+              <p className="text-sm text-muted">Kéo thả source ZIP vào đây</p>
+              <p className="text-xs text-muted-soft">Hoặc click để chọn file</p>
             </div>
 
             {sourceType === "zip" && (
-              <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+              <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p className="min-w-0 break-words">
                   Đang dùng source ZIP upload — có thể không khớp commit trên GitLab.
@@ -357,13 +357,13 @@ export default function NewReviewPage() {
             )}
 
             <div className="space-y-2">
-              <p className="text-sm font-medium text-slate-300">
+              <p className="text-sm font-medium text-muted">
                 Convention (mặc định đã chọn hết — bỏ chọn nếu không cần)
               </p>
-              <div className="max-h-40 overflow-y-auto rounded-xl border border-white/5 p-2">
+              <div className="max-h-40 overflow-y-auto rounded-xl border border-border p-2">
                 <div className="flex flex-wrap gap-2">
                   {categories.length === 0 ? (
-                    <p className="text-xs text-slate-500">Chưa có convention — vào Settings để upload.</p>
+                    <p className="text-xs text-muted-soft">Chưa có convention — vào Settings để upload.</p>
                   ) : (
                     categories.map((c) => (
                       <button
@@ -374,7 +374,7 @@ export default function NewReviewPage() {
                         className={`max-w-full truncate rounded-full px-3 py-1 text-xs transition ${
                           selectedCategories.includes(c.id)
                             ? "bg-violet-500/30 text-violet-200 ring-1 ring-violet-500/50"
-                            : "bg-white/5 text-slate-400 hover:bg-white/10"
+                            : "bg-surface text-muted hover:bg-surface-hover"
                         }`}
                       >
                         L{c.level} {c.name}
@@ -391,8 +391,8 @@ export default function NewReviewPage() {
       <Card>
         <CardContent className="flex flex-col items-start gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className="font-medium text-white">3. Chạy validate</p>
-            <p className="text-sm text-slate-400">
+            <p className="font-medium text-foreground">3. Chạy validate</p>
+            <p className="text-sm text-muted">
               Chỉ quét comment chưa resolve; ưu tiên MR diff + file/line trong note.
             </p>
             {error && <p className="mt-2 break-words text-sm text-red-400">{error}</p>}

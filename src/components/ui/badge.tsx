@@ -1,12 +1,18 @@
 import { cn } from "@/lib/utils";
 
 const variants = {
-  default: "bg-white/10 text-slate-200",
-  high: "bg-red-500/20 text-red-300 border border-red-500/30",
-  valid: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
-  invalid: "bg-orange-500/20 text-orange-300 border border-orange-500/30",
-  partial: "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30",
-  violet: "bg-violet-500/20 text-violet-300 border border-violet-500/30",
+  default:
+    "border border-border bg-surface text-foreground",
+  high:
+    "border border-red-500/30 bg-red-500/15 text-red-700 dark:text-red-300",
+  valid:
+    "border border-emerald-500/30 bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
+  invalid:
+    "border border-orange-500/30 bg-orange-500/15 text-orange-800 dark:text-orange-300",
+  partial:
+    "border border-yellow-500/30 bg-yellow-500/15 text-yellow-800 dark:text-yellow-300",
+  violet:
+    "border border-violet-500/30 bg-violet-500/15 text-violet-800 dark:text-violet-300",
 };
 
 export function Badge({

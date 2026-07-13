@@ -7,17 +7,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CommentSkeleton } from "@/components/ui/skeleton";
+import { MarkdownPreview } from "@/components/ui/markdown-preview";
 import { toast } from "@/components/ui/toaster";
 import {
   AlertTriangle,
   ArrowLeft,
+  Bot,
+  Check,
+  Clock,
+  Copy,
   Download,
   History,
   MessageSquare,
+  User,
   Wrench,
 } from "lucide-react";
-import { AiProviderPicker } from "@/components/reviews/ai-provider-picker";
-import { CardDescription } from "@/components/ui/card";
 
 interface CommentResult {
   id: string;
@@ -41,6 +45,8 @@ interface Session {
   sourceBranch: string;
   sourceType: string;
   status: string;
+  createdAt: string;
+  updatedAt?: string;
   aiProviderId: string | null;
   aiProvider: {
     id: string;
@@ -51,9 +57,25 @@ interface Session {
     isEnabled: boolean;
     remaining: number | null;
   } | null;
+  user?: {
+    id: string;
+    name: string | null;
+    email: string;
+  } | null;
   zipWarning: boolean;
   hasFixedSource: boolean;
   commentResults: CommentResult[];
+}
+
+function formatDateTime(value: string) {
+  try {
+    return new Intl.DateTimeFormat("vi-VN", {
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
 }
 
 function verdictBadge(verdict: string | null) {
@@ -75,7 +97,10 @@ export default function ReviewSessionPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
   const [providerId, setProviderId] = useState<string | null>(null);
-  const [providerSaving, setProviderSaving] = useState(false);
+  const [verdictFilter, setVerdictFilter] = useState<
+    "all" | "VALID" | "INVALID" | "PARTIAL" | "other"
+  >("all");
+  const [copiedKey, setCopiedKey] = useState("");
 
   const loadSession = useCallback(async () => {
     try {
@@ -95,28 +120,16 @@ export default function ReviewSessionPage() {
     }
   }, [params.id]);
 
-  async function changeProvider(nextId: string) {
-    setProviderId(nextId);
-    if (nextId === session?.aiProviderId) return;
-
-    setProviderSaving(true);
+  async function copyText(key: string, text: string) {
     try {
-      const res = await fetch(`/api/reviews/${params.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ aiProviderId: nextId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(typeof data.error === "string" ? data.error : "Đổi provider thất bại");
-        return;
-      }
-      toast.success("Đã cập nhật AI provider");
-      await loadSession();
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      toast.success("Đã copy vào clipboard");
+      window.setTimeout(() => {
+        setCopiedKey((prev) => (prev === key ? "" : prev));
+      }, 1500);
     } catch {
-      toast.error("Lỗi kết nối khi đổi provider");
-    } finally {
-      setProviderSaving(false);
+      toast.error("Không copy được — trình duyệt chặn clipboard");
     }
   }
 
@@ -258,34 +271,163 @@ export default function ReviewSessionPage() {
 
   const validCount = session.commentResults.filter((c) => c.verdict === "VALID").length;
   const invalidCount = session.commentResults.filter((c) => c.verdict === "INVALID").length;
+  const partialCount = session.commentResults.filter((c) => c.verdict === "PARTIAL").length;
+  const otherCount = session.commentResults.filter(
+    (c) => c.verdict !== "VALID" && c.verdict !== "INVALID" && c.verdict !== "PARTIAL",
+  ).length;
+
+  const filteredComments = session.commentResults.filter((c) => {
+    if (verdictFilter === "all") return true;
+    if (verdictFilter === "other") {
+      return c.verdict !== "VALID" && c.verdict !== "INVALID" && c.verdict !== "PARTIAL";
+    }
+    return c.verdict === verdictFilter;
+  });
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <Link href="/reviews/history">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4" />
-            Lịch sử
-          </Button>
-        </Link>
-        <Link href="/reviews">
-          <Button variant="ghost" size="sm">
-            <History className="h-4 w-4" />
-            Review mới
-          </Button>
-        </Link>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold text-white" title={`${session.projectPath} !${session.mrIid}`}>
-            {session.projectPath} !{session.mrIid}
-          </h1>
-          <p className="truncate text-sm text-slate-400">
-            {session.sourceBranch} · {session.status}
-          </p>
+      <div className="sticky top-16 z-30 -mx-1 space-y-3 border-b border-border bg-header px-1 py-3 backdrop-blur-xl">
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href="/reviews/history">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-4 w-4" />
+              Lịch sử
+            </Button>
+          </Link>
+          <Link href="/reviews">
+            <Button variant="ghost" size="sm">
+              <History className="h-4 w-4" />
+              Review mới
+            </Button>
+          </Link>
+          <div className="min-w-0 flex-1">
+            <h1
+              className="truncate text-xl font-bold text-foreground sm:text-2xl"
+              title={`${session.projectPath} !${session.mrIid}`}
+            >
+              {session.projectPath} !{session.mrIid}
+            </h1>
+            <p className="truncate text-sm text-muted">
+              {session.sourceBranch} · {session.status}
+            </p>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-soft">
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <User className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  Người tạo:{" "}
+                  {session.user?.name || session.user?.email || "Không rõ"}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                <span>Chạy lúc: {formatDateTime(session.createdAt)}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-soft">Lọc:</span>
+          <button type="button" onClick={() => setVerdictFilter("all")}>
+            <Badge
+              className={
+                verdictFilter === "all"
+                  ? "ring-2 ring-white/40"
+                  : "opacity-70 hover:opacity-100"
+              }
+            >
+              Tất cả {session.commentResults.length}
+            </Badge>
+          </button>
+          <button type="button" onClick={() => setVerdictFilter("VALID")}>
+            <Badge
+              variant="valid"
+              className={
+                verdictFilter === "VALID"
+                  ? "ring-2 ring-emerald-400/50"
+                  : "opacity-70 hover:opacity-100"
+              }
+            >
+              {validCount} hợp lý
+            </Badge>
+          </button>
+          <button type="button" onClick={() => setVerdictFilter("INVALID")}>
+            <Badge
+              variant="invalid"
+              className={
+                verdictFilter === "INVALID"
+                  ? "ring-2 ring-orange-400/50"
+                  : "opacity-70 hover:opacity-100"
+              }
+            >
+              {invalidCount} không hợp lý
+            </Badge>
+          </button>
+          {partialCount > 0 && (
+            <button type="button" onClick={() => setVerdictFilter("PARTIAL")}>
+              <Badge
+                variant="partial"
+                className={
+                  verdictFilter === "PARTIAL"
+                    ? "ring-2 ring-yellow-400/50"
+                    : "opacity-70 hover:opacity-100"
+                }
+              >
+                {partialCount} một phần
+              </Badge>
+            </button>
+          )}
+          {otherCount > 0 && (
+            <button type="button" onClick={() => setVerdictFilter("other")}>
+              <Badge
+                className={
+                  verdictFilter === "other"
+                    ? "ring-2 ring-white/40"
+                    : "opacity-70 hover:opacity-100"
+                }
+              >
+                {otherCount} khác
+              </Badge>
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {validCount > 0 && (
+            <Button
+              variant="success"
+              size="sm"
+              onClick={fixAllValid}
+              loading={actionLoading === "fix-all"}
+            >
+              {actionLoading !== "fix-all" && <Wrench className="h-4 w-4" />}
+              {actionLoading === "fix-all" ? "Đang fix..." : "AI fix tất cả VALID"}
+            </Button>
+          )}
+          {invalidCount > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={pushAllInvalid}
+              loading={actionLoading === "push-all"}
+            >
+              {actionLoading !== "push-all" && <MessageSquare className="h-4 w-4" />}
+              {actionLoading === "push-all" ? "Đang push..." : "Push tất cả lý do INVALID"}
+            </Button>
+          )}
+          {session.hasFixedSource && (
+            <a href={`/api/reviews/${session.id}/download`}>
+              <Button variant="secondary" size="sm">
+                <Download className="h-4 w-4" />
+                Tải source đã fix
+              </Button>
+            </a>
+          )}
         </div>
       </div>
 
       {session.zipWarning && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+        <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <p className="min-w-0 break-words">
             Phiên này dùng source ZIP upload — kết quả có thể lệch so với GitLab.
@@ -293,97 +435,106 @@ export default function ReviewSessionPage() {
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">AI Provider cho phiên này</CardTitle>
-          <CardDescription className="break-words">
-            {session.aiProvider
-              ? `Đang dùng: ${session.aiProvider.label} · ${session.aiProvider.model ?? "default"}`
-              : "Chưa ghi nhận provider — chọn model trước khi fix comment."}
-            {providerSaving && " · Đang lưu..."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AiProviderPicker
-            value={providerId}
-            onChange={changeProvider}
-            autoSelectDefault={!session.aiProviderId}
-          />
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-wrap gap-3">
-        <Badge variant="valid">{validCount} hợp lý</Badge>
-        <Badge variant="invalid">{invalidCount} không hợp lý</Badge>
-        <Badge>{session.commentResults.length} tổng unresolved</Badge>
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm">
+        <Bot className="h-4 w-4 shrink-0 text-violet-400" />
+        <span className="text-muted">Model AI đang chọn</span>
+        <Badge variant="violet" className="max-w-full truncate font-mono text-xs">
+          {session.aiProvider
+            ? `${session.aiProvider.label} · ${session.aiProvider.model ?? "default"}`
+            : "Chưa ghi nhận"}
+        </Badge>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {validCount > 0 && (
-          <Button
-            variant="success"
-            onClick={fixAllValid}
-            loading={actionLoading === "fix-all"}
-          >
-            {actionLoading !== "fix-all" && <Wrench className="h-4 w-4" />}
-            {actionLoading === "fix-all" ? "Đang fix..." : "AI fix tất cả VALID"}
-          </Button>
-        )}
-        {invalidCount > 0 && (
-          <Button
-            variant="destructive"
-            onClick={pushAllInvalid}
-            loading={actionLoading === "push-all"}
-          >
-            {actionLoading !== "push-all" && <MessageSquare className="h-4 w-4" />}
-            {actionLoading === "push-all" ? "Đang push..." : "Push tất cả lý do INVALID"}
-          </Button>
-        )}
-        {session.hasFixedSource && (
-          <a href={`/api/reviews/${session.id}/download`}>
-            <Button variant="secondary">
-              <Download className="h-4 w-4" />
-              Tải source đã fix
-            </Button>
-          </a>
-        )}
-      </div>
+      <div className="space-y-4">
+        <p className="text-sm text-muted">
+          Đang hiện {filteredComments.length}/{session.commentResults.length} comment
+          {verdictFilter !== "all" && (
+            <>
+              {" "}
+              ·{" "}
+              <button
+                type="button"
+                className="text-violet-300 hover:underline"
+                onClick={() => setVerdictFilter("all")}
+              >
+                Xóa bộ lọc
+              </button>
+            </>
+          )}
+        </p>
+        {session.commentResults.length === 0 ? (
+          <p className="text-sm text-muted">Không có comment unresolved trong phiên này.</p>
+        ) : filteredComments.length === 0 ? (
+          <p className="text-sm text-muted">
+            Không có comment nào khớp bộ lọc hiện tại.
+          </p>
+        ) : (
+          filteredComments.map((comment) => {
+            const fileRef =
+              comment.filePath != null
+                ? `${comment.filePath}${comment.line != null ? `:${comment.line}` : ""}`
+                : null;
+            const pathCopied = copiedKey === `path-${comment.id}`;
+            const replyCopied = copiedKey === `reply-${comment.id}`;
 
-      <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
-        {session.commentResults.map((comment) => (
+            return (
           <Card key={comment.id}>
             <CardHeader className="pb-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 {verdictBadge(comment.verdict)}
                 {comment.severity && <Badge variant="high">{comment.severity}</Badge>}
-                {comment.filePath && (
-                  <span
-                    className="min-w-0 max-w-full truncate font-mono text-xs text-cyan-300"
-                    title={`${comment.filePath}:${comment.line}`}
-                  >
-                    {comment.filePath}:{comment.line}
-                  </span>
+                {fileRef && (
+                  <div className="flex min-w-0 max-w-full items-center gap-1">
+                    <span
+                      className="min-w-0 truncate font-mono text-xs text-cyan-700 dark:text-cyan-300"
+                      title={fileRef}
+                    >
+                      {fileRef}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 px-2"
+                      title="Copy đường dẫn source"
+                      onClick={() => copyText(`path-${comment.id}`, fileRef)}
+                    >
+                      {pathCopied ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
                 )}
                 {comment.pushedToGitlab && <Badge variant="violet">Đã push</Badge>}
               </div>
-              <CardTitle className="truncate text-sm font-normal text-slate-300">
+              <CardTitle className="truncate text-sm font-normal text-muted">
                 {comment.author}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <pre className="max-h-40 overflow-auto rounded-xl bg-black/30 p-3 text-xs text-slate-300 whitespace-pre-wrap break-words">
-                {comment.body.slice(0, 600)}
-                {comment.body.length > 600 ? "..." : ""}
-              </pre>
+              <div className="max-h-48 overflow-auto rounded-xl bg-black/30 p-3">
+                <MarkdownPreview
+                  content={
+                    comment.body.length > 2000
+                      ? `${comment.body.slice(0, 2000)}\n\n...`
+                      : comment.body
+                  }
+                  compact
+                />
+              </div>
 
               {comment.reasonShort && (
-                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                  <p className="break-words text-sm font-medium text-white">{comment.reasonShort}</p>
+                <div className="rounded-xl border border-border bg-surface p-4">
+                  <p className="break-words text-sm font-medium text-foreground">{comment.reasonShort}</p>
                   {comment.reasonDetail && (
-                    <p className="mt-2 break-words text-sm text-slate-400">{comment.reasonDetail}</p>
+                    <div className="mt-2">
+                      <MarkdownPreview content={comment.reasonDetail} />
+                    </div>
                   )}
                   {comment.confidence != null && (
-                    <p className="mt-2 text-xs text-slate-500">
+                    <p className="mt-2 text-xs text-muted-soft">
                       Confidence: {Math.round(comment.confidence * 100)}%
                     </p>
                   )}
@@ -398,18 +549,33 @@ export default function ReviewSessionPage() {
                       : "border-violet-500/20 bg-violet-500/5"
                   }`}
                 >
-                  <p
-                    className={`mb-1 text-xs font-medium ${
-                      comment.verdict === "INVALID" ? "text-orange-300" : "text-violet-300"
-                    }`}
-                  >
-                    {comment.verdict === "INVALID"
-                      ? "Reply phản bác — bảo vệ code hiện tại"
-                      : "Reply đề xuất"}
-                  </p>
-                  <p className="break-words text-sm text-slate-300 whitespace-pre-wrap">
-                    {comment.suggestedReply}
-                  </p>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <p
+                      className={`text-xs font-medium ${
+                        comment.verdict === "INVALID" ? "text-orange-300" : "text-violet-300"
+                      }`}
+                    >
+                      {comment.verdict === "INVALID"
+                        ? "Reply phản bác — bảo vệ code hiện tại"
+                        : "Reply đề xuất"}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        copyText(`reply-${comment.id}`, comment.suggestedReply!)
+                      }
+                    >
+                      {replyCopied ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                      {replyCopied ? "Đã copy" : "Copy reply"}
+                    </Button>
+                  </div>
+                  <MarkdownPreview content={comment.suggestedReply} />
                 </div>
               )}
 
@@ -451,7 +617,9 @@ export default function ReviewSessionPage() {
               </div>
             </CardContent>
           </Card>
-        ))}
+            );
+          })
+        )}
       </div>
     </div>
   );

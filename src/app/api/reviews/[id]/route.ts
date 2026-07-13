@@ -47,6 +47,7 @@ export async function GET(
     where: { id, userId: authResult.userId },
     include: {
       commentResults: { orderBy: { createdAt: "asc" } },
+      user: { select: { id: true, name: true, email: true } },
     },
   });
 
@@ -59,9 +60,13 @@ export async function GET(
     session.aiProviderId,
   );
 
+  const { zipData: _zip, fixedSourceData: _fixed, ...safeSession } = session;
+  void _zip;
+  void _fixed;
+
   return NextResponse.json({
     session: {
-      ...session,
+      ...safeSession,
       aiProvider,
       zipWarning: session.sourceType === "zip",
       hasFixedSource: !!session.fixedSourceData,

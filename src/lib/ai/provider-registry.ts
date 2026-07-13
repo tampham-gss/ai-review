@@ -76,7 +76,7 @@ export const AI_PROVIDER_REGISTRY: AiProviderMeta[] = [
     defaultBaseUrl: "https://api.cerebras.ai/v1",
     defaultModel: "gpt-oss-120b",
     description:
-      "Inference cực nhanh (OpenAI-compatible). Lấy API key tại https://cloud.cerebras.ai",
+      "Inference cực nhanh (OpenAI-compatible). Free tier dễ bị HTTP 429 khi review nhiều comment — nên đợi hoặc dùng provider khác nếu bị rate limit. Lấy API key tại https://cloud.cerebras.ai",
     group: "compatible",
   },
   {

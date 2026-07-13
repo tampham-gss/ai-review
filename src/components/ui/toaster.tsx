@@ -52,9 +52,10 @@ const icons = {
 };
 
 const styles = {
-  success: "border-emerald-500/30 bg-emerald-500/15 text-emerald-100",
-  error: "border-red-500/30 bg-red-500/15 text-red-100",
-  info: "border-cyan-500/30 bg-cyan-500/15 text-cyan-100",
+  success:
+    "border-emerald-500/30 bg-emerald-500/15 text-emerald-900 dark:text-emerald-100",
+  error: "border-red-500/30 bg-red-500/15 text-red-900 dark:text-red-100",
+  info: "border-cyan-500/30 bg-cyan-500/15 text-cyan-900 dark:text-cyan-100",
 };
 
 export function Toaster() {

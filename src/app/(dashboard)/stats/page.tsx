@@ -138,7 +138,7 @@ function SimpleBars({
   return (
     <div className="space-y-3">
       {!hasAnyValue && (
-        <p className="text-sm text-slate-500">Chưa có dữ liệu trong kỳ này.</p>
+        <p className="text-sm text-muted-soft">Chưa có dữ liệu trong kỳ này.</p>
       )}
       <div className="flex h-56 gap-1.5 overflow-x-auto pb-1">
         {items.map((item) => {
@@ -150,10 +150,10 @@ function SimpleBars({
               className="flex h-full min-w-8 flex-1 flex-col items-center gap-1.5"
               title={`${item.label}: ${formatNumber(value)}`}
             >
-              <span className="h-4 shrink-0 text-[10px] tabular-nums text-slate-400">
+              <span className="h-4 shrink-0 text-[10px] tabular-nums text-muted">
                 {value > 0 ? formatNumber(value) : ""}
               </span>
-              <div className="relative flex w-full flex-1 items-end justify-center rounded-t-md bg-white/[0.03]">
+              <div className="relative flex w-full flex-1 items-end justify-center rounded-t-md bg-surface">
                 <div
                   className="w-full min-h-0 rounded-t-md bg-gradient-to-t from-violet-600 to-cyan-400 transition-all duration-300"
                   style={{
@@ -161,7 +161,7 @@ function SimpleBars({
                   }}
                 />
               </div>
-              <span className="h-4 shrink-0 truncate text-[10px] text-slate-400">
+              <span className="h-4 shrink-0 truncate text-[10px] text-muted">
                 {item.label}
               </span>
             </div>
@@ -220,11 +220,11 @@ export default function StatsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-3xl font-bold text-white">
-            <BarChart3 className="h-7 w-7 shrink-0 text-cyan-400" />
+          <h1 className="flex items-center gap-2 text-3xl font-bold text-foreground">
+            <BarChart3 className="h-7 w-7 shrink-0 text-cyan-700 dark:text-cyan-400" />
             Thống kê sử dụng
           </h1>
-          <p className="mt-1 text-slate-400">
+          <p className="mt-1 text-muted">
             Theo dõi phiên review, comment và token AI theo ngày / tuần / tháng.
           </p>
         </div>
@@ -253,8 +253,8 @@ export default function StatsPage() {
 
       {data && (
         <>
-          <p className="text-sm text-slate-500">
-            Kỳ: <span className="text-slate-300">{data.rangeLabel}</span> ·{" "}
+          <p className="text-sm text-muted-soft">
+            Kỳ: <span className="text-muted">{data.rangeLabel}</span> ·{" "}
             {new Date(data.start).toLocaleString("vi-VN")} →{" "}
             {new Date(data.end).toLocaleString("vi-VN")}
           </p>
@@ -338,11 +338,11 @@ export default function StatsPage() {
                         <Badge variant={variant === "default" ? undefined : variant}>
                           {label}
                         </Badge>
-                        <span className="text-slate-400">
+                        <span className="text-muted">
                           {count} ({pct}%)
                         </span>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-2 overflow-hidden rounded-full bg-surface-hover">
                         <div
                           className={cn(
                             "h-full rounded-full",
@@ -370,14 +370,14 @@ export default function StatsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
-                  <span className="text-sm text-slate-300">Validate</span>
+                <div className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3">
+                  <span className="text-sm text-muted">Validate</span>
                   <span className="font-mono font-medium">
                     {formatNumber(data.tokensByAction.validate)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
-                  <span className="text-sm text-slate-300">AI Fix</span>
+                <div className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3">
+                  <span className="text-sm text-muted">AI Fix</span>
                   <span className="font-mono font-medium">
                     {formatNumber(data.tokensByAction.fix)}
                   </span>
@@ -397,13 +397,13 @@ export default function StatsPage() {
               </CardHeader>
               <CardContent>
                 {data.topProjects.length === 0 ? (
-                  <p className="text-sm text-slate-400">Chưa có dữ liệu trong kỳ này.</p>
+                  <p className="text-sm text-muted">Chưa có dữ liệu trong kỳ này.</p>
                 ) : (
                   <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
                     {data.topProjects.map((p) => (
                       <div
                         key={p.projectPath}
-                        className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2"
+                        className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border bg-surface px-3 py-2"
                       >
                         <span className="min-w-0 truncate text-sm" title={p.projectPath}>
                           {p.projectPath}
@@ -429,7 +429,7 @@ export default function StatsPage() {
                   <>
                     {" "}
                     Đang dẫn đầu:{" "}
-                    <span className="text-amber-200">
+                    <span className="text-amber-900 dark:text-amber-200">
                       {getProviderMeta(data.bestModel.provider)?.label ??
                         data.bestModel.provider}{" "}
                       · {data.bestModel.model ?? "default"} ({data.bestModel.label})
@@ -440,17 +440,17 @@ export default function StatsPage() {
             </CardHeader>
             <CardContent>
               {data.modelRatings.length === 0 ? (
-                <p className="text-sm text-slate-400">Chưa có provider để xếp hạng.</p>
+                <p className="text-sm text-muted">Chưa có provider để xếp hạng.</p>
               ) : (
                 <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                   {data.modelRatings.map((r, idx) => (
                     <div
                       key={r.providerId}
-                      className="flex min-w-0 flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-surface px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-medium text-slate-500">
+                          <span className="text-xs font-medium text-muted-soft">
                             #{idx + 1}
                           </span>
                           <p className="truncate font-medium">
@@ -458,10 +458,10 @@ export default function StatsPage() {
                           </p>
                           {idx === 0 && <Badge variant="violet">Tốt nhất</Badge>}
                         </div>
-                        <p className="truncate font-mono text-xs text-slate-500">
+                        <p className="truncate font-mono text-xs text-muted-soft">
                           {r.model ?? "default"}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">{r.reason}</p>
+                        <p className="mt-1 text-xs text-muted-soft">{r.reason}</p>
                       </div>
                       <div className="shrink-0 space-y-1 sm:text-right">
                         <StarRating
@@ -469,7 +469,7 @@ export default function StatsPage() {
                           showValue
                           label={r.label}
                         />
-                        <p className="text-[11px] text-slate-500">
+                        <p className="text-[11px] text-muted-soft">
                           Model {r.capabilityStars}★
                           {r.performanceStars
                             ? ` · Thực tế ${r.performanceStars}★`
@@ -493,7 +493,7 @@ export default function StatsPage() {
             </CardHeader>
             <CardContent>
               {data.providers.length === 0 ? (
-                <p className="text-sm text-slate-400">Chưa cấu hình provider.</p>
+                <p className="text-sm text-muted">Chưa cấu hình provider.</p>
               ) : (
                 <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
                   {data.providers.map((p) => {
@@ -503,13 +503,13 @@ export default function StatsPage() {
                     return (
                       <div
                         key={p.id}
-                        className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm"
+                        className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm"
                       >
                         <div className="min-w-0">
                           <p className="truncate font-medium">
                             {getProviderMeta(p.provider)?.label ?? p.provider}
                           </p>
-                          <p className="truncate text-xs text-slate-500">
+                          <p className="truncate text-xs text-muted-soft">
                             {p.model ?? "default"}
                           </p>
                           {rating && (
@@ -521,9 +521,9 @@ export default function StatsPage() {
                             />
                           )}
                         </div>
-                        <div className="shrink-0 text-right text-slate-300">
+                        <div className="shrink-0 text-right text-muted">
                           <p className="font-mono">{formatNumber(p.tokensUsed)}</p>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs text-muted-soft">
                             còn{" "}
                             {p.remaining === null ? "∞" : formatNumber(p.remaining)}
                           </p>

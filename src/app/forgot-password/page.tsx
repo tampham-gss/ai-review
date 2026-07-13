@@ -124,7 +124,7 @@ export default function ForgotPasswordPage() {
                 maxLength={8}
               />
               {devOtp && (
-                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
                   Dev OTP: <span className="font-mono font-bold">{devOtp}</span>
                 </p>
               )}
@@ -163,7 +163,7 @@ export default function ForgotPasswordPage() {
             </form>
           )}
 
-          <p className="text-center text-sm text-slate-400">
+          <p className="text-center text-sm text-muted">
             <Link href="/login" className="text-violet-300 hover:underline">
               Quay lại đăng nhập
             </Link>

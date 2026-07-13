@@ -36,6 +36,32 @@ function resolveModel(provider: AiProviderName, model?: string | null): string {
   return getDefaultModel(provider);
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== "object") return null;
+  const e = error as { status?: number; statusCode?: number };
+  if (typeof e.status === "number") return e.status;
+  if (typeof e.statusCode === "number") return e.statusCode;
+  return null;
+}
+
+function isRateLimitError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  if (status === 429) return true;
+  const raw = error instanceof Error ? error.message : String(error);
+  const lower = raw.toLowerCase();
+  return (
+    raw.includes("429") ||
+    lower.includes("rate limit") ||
+    lower.includes("too many requests") ||
+    lower.includes("quota") ||
+    lower.includes("resource_exhausted")
+  );
+}
+
 function formatAiError(
   error: unknown,
   provider?: AiProviderName,
@@ -43,13 +69,12 @@ function formatAiError(
 ): string {
   const raw = error instanceof Error ? error.message : String(error);
   const lower = raw.toLowerCase();
+  const status = getErrorStatus(error);
+  const meta = provider ? getProviderMeta(provider) : null;
+  const providerLabel = meta?.label ?? provider ?? "AI";
+  const modelLabel = model ?? "?";
 
-  if (
-    raw.includes("429") ||
-    lower.includes("quota") ||
-    lower.includes("resource_exhausted") ||
-    raw.includes("Too Many Requests")
-  ) {
+  if (isRateLimitError(error) || status === 429) {
     if (provider === "gemini") {
       const isZeroQuota =
         /limit:\s*0\b/i.test(raw) ||
@@ -58,46 +83,70 @@ function formatAiError(
 
       if (isZeroQuota) {
         return (
-          `Gemini: project/API key đang có free-tier quota = 0 cho model "${model ?? "?"}". ` +
+          `Gemini: project/API key đang có free-tier quota = 0 cho model "${modelLabel}". ` +
           `Đổi model sẽ KHÔNG hết lỗi này. Cách xử lý: ` +
           `(1) Vào https://aistudio.google.com/apikey tạo API key từ project khác, hoặc ` +
           `(2) Bật Billing cho Google Cloud project (vẫn có free tier sau khi link billing), ` +
-          `(3) Kiểm tra quota tại https://ai.dev/rate-limit. ` +
-          `Chi tiết: ${raw.slice(0, 160)}`
+          `(3) Kiểm tra quota tại https://ai.dev/rate-limit.`
         );
       }
 
       return (
-        `Gemini hết quota/rate limit cho model "${model ?? "hiện tại"}". ` +
-        `Đợi vài phút rồi thử lại, hoặc dùng model khác (vd. gemini-2.5-flash-lite). ` +
-        `Chi tiết: ${raw.slice(0, 140)}`
+        `Gemini hết quota/rate limit cho model "${modelLabel}". ` +
+        `Đợi vài phút rồi thử lại, hoặc dùng model khác (vd. gemini-2.5-flash-lite).`
       );
     }
-    return "Hết quota/rate limit. Đợi vài phút rồi thử lại, hoặc đổi model/provider.";
+
+    if (provider === "cerebras") {
+      return (
+        `Cerebras rate limit (HTTP 429) cho model "${modelLabel}". ` +
+        `Free tier thường giới hạn số request/phút — review nhiều comment sẽ dễ bị chặn. ` +
+        `Cách xử lý: (1) Đợi 30–60 giây rồi chạy lại, ` +
+        `(2) Giảm tốc bằng cách đổi sang provider khác (OpenAI/Claude/Gemini), ` +
+        `(3) Kiểm tra quota tại https://cloud.cerebras.ai. ` +
+        `Chi tiết gốc: ${raw.slice(0, 120)}`
+      );
+    }
+
+    if (provider === "groq") {
+      return (
+        `Groq rate limit (HTTP 429) cho model "${modelLabel}". ` +
+        `Đợi khoảng 1 phút rồi thử lại, hoặc đổi provider khác. ` +
+        `Chi tiết: ${raw.slice(0, 120)}`
+      );
+    }
+
+    return (
+      `${providerLabel} rate limit / hết quota (HTTP 429) cho model "${modelLabel}". ` +
+      `Đợi vài phút rồi thử lại, hoặc đổi model/provider. ` +
+      `Chi tiết: ${raw.slice(0, 140)}`
+    );
   }
 
   if (
+    status === 403 ||
     raw.includes("403") ||
     lower.includes("permission_denied") ||
     lower.includes("has been denied access")
   ) {
     if (provider === "gemini") {
       return (
-        `Gemini từ chối truy cập (403) model "${model ?? "?"}". ` +
+        `Gemini từ chối truy cập (403) model "${modelLabel}". ` +
         `Project có thể bị hạn chế vùng/tài khoản. Tạo API key mới tại https://aistudio.google.com/apikey ` +
-        `hoặc bật billing. Chi tiết: ${raw.slice(0, 160)}`
+        `hoặc bật billing.`
       );
     }
-    return "API key không hợp lệ hoặc không có quyền truy cập.";
+    return `${providerLabel}: API key không hợp lệ hoặc không có quyền truy cập (403).`;
   }
 
   if (
+    status === 401 ||
     raw.includes("401") ||
     lower.includes("invalid api key") ||
     lower.includes("incorrect api key") ||
     lower.includes("api key not valid")
   ) {
-    return "API key không hợp lệ hoặc không có quyền truy cập.";
+    return `${providerLabel}: API key không hợp lệ hoặc không có quyền truy cập (401).`;
   }
 
   if (
@@ -105,24 +154,39 @@ function formatAiError(
     lower.includes("is not found") ||
     lower.includes("not found for api version")
   ) {
+    if (provider === "gemini") {
+      return (
+        `Model "${modelLabel}" không tồn tại hoặc đã bị Google shutdown. ` +
+        `Thử: gemini-2.5-flash-lite / gemini-2.5-flash / gemini-2.5-pro.`
+      );
+    }
+    return `${providerLabel}: model "${modelLabel}" không tồn tại hoặc không khả dụng.`;
+  }
+
+  if (status === 400 || raw.includes("400")) {
     return (
-      `Model "${model ?? ""}" không tồn tại hoặc đã bị Google shutdown. ` +
-      `Thử: gemini-2.5-flash-lite / gemini-2.5-flash / gemini-2.5-pro.`
+      `${providerLabel} từ chối request (400) với model "${modelLabel}". ` +
+      `Có thể model không hỗ trợ JSON mode / tham số hiện tại. Chi tiết: ${raw.slice(0, 180)}`
     );
   }
 
   if (raw.length > 280) {
     const geminiPart = raw.split("[GoogleGenerativeAI Error]:")[1]?.trim();
     if (geminiPart) {
-      const status = geminiPart.match(/\[(\d{3}[^\]]*)\]/)?.[1];
-      return status
-        ? `Lỗi Gemini [${status}]: ${geminiPart.slice(0, 160)}...`
+      const geminiStatus = geminiPart.match(/\[(\d{3}[^\]]*)\]/)?.[1];
+      return geminiStatus
+        ? `Lỗi Gemini [${geminiStatus}]: ${geminiPart.slice(0, 160)}...`
         : geminiPart.slice(0, 220);
     }
-    return `${raw.slice(0, 200)}...`;
+    return `${providerLabel}: ${raw.slice(0, 200)}...`;
   }
 
-  return raw;
+  // Làm rõ các message kiểu "429 status code (no body)"
+  if (/^\d{3}\s+status code/i.test(raw)) {
+    return `${providerLabel} lỗi HTTP: ${raw} (model: ${modelLabel})`;
+  }
+
+  return `${providerLabel}: ${raw}`;
 }
 
 export async function testAiConnection(params: {
@@ -297,15 +361,51 @@ async function callAi(
   const meta = getProviderMeta(provider.provider);
   if (!meta) throw new Error(`Provider không hỗ trợ: ${provider.provider}`);
 
-  switch (meta.type) {
-    case "openai":
-    case "openai_compatible":
-      return callOpenAI(provider, system, user);
-    case "anthropic":
-      return callAnthropic(provider, system, user);
-    default:
-      throw new Error(`Provider không hỗ trợ: ${provider.provider}`);
+  const maxAttempts = 4;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      let result: { text: string; tokens: number };
+      switch (meta.type) {
+        case "openai":
+        case "openai_compatible":
+          result = await callOpenAI(provider, system, user);
+          break;
+        case "anthropic":
+          result = await callAnthropic(provider, system, user);
+          break;
+        default:
+          throw new Error(`Provider không hỗ trợ: ${provider.provider}`);
+      }
+
+      // Pace free-tier providers khi validate hàng loạt comment
+      if (provider.provider === "cerebras" || provider.provider === "groq") {
+        await sleep(350);
+      }
+
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (!isRateLimitError(error) || attempt === maxAttempts) {
+        throw new Error(
+          formatAiError(error, provider.provider, provider.model),
+        );
+      }
+
+      // Cerebras/Groq free tier: backoff dài hơn
+      const baseDelay =
+        provider.provider === "cerebras" || provider.provider === "groq"
+          ? 4000
+          : 2000;
+      const delayMs = baseDelay * attempt + Math.floor(Math.random() * 500);
+      await sleep(delayMs);
+    }
   }
+
+  throw new Error(
+    formatAiError(lastError, provider.provider, provider.model),
+  );
 }
 
 function parseJson<T>(text: string): T {

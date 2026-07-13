@@ -38,13 +38,13 @@ export function StarRating({
               iconClass,
               filled
                 ? "fill-amber-400 text-amber-400"
-                : "fill-transparent text-slate-600",
+                : "fill-transparent text-muted-soft",
             )}
           />
         );
       })}
       {showValue && (
-        <span className="ml-1 text-xs tabular-nums text-slate-400">
+        <span className="ml-1 text-xs tabular-nums text-muted">
           {value}/{max}
           {label ? ` · ${label}` : ""}
         </span>
