@@ -39,7 +39,7 @@ export function applyProgressEvent(
       return {
         ...prev,
         status: "running",
-        percent: event.percent,
+        percent: event.percent > 0 ? event.percent : prev.percent,
         phaseMessage: event.message,
         total: event.type === "comments_loaded" ? event.total : prev.total,
       };
@@ -72,6 +72,25 @@ export function applyProgressEvent(
         phaseMessage: event.message,
         total: event.total,
         current: event.current,
+      };
+    case "heartbeat":
+      return {
+        ...prev,
+        status: "running",
+        percent: event.percent > 0 ? event.percent : prev.percent,
+        phaseMessage: event.message,
+        ...(event.current !== undefined ? { current: event.current } : {}),
+        ...(event.total !== undefined ? { total: event.total } : {}),
+      };
+    case "need_continue":
+      return {
+        ...prev,
+        status: "running",
+        percent: event.percent,
+        phaseMessage: event.message,
+        total: event.total,
+        current: event.current,
+        sessionId: event.sessionId,
       };
     case "complete":
       return {
@@ -274,17 +293,80 @@ export async function streamValidate(
   onEvent: (event: ValidateProgressEvent) => void,
   signal?: AbortSignal,
 ): Promise<string | null> {
+  let sessionId: string | null =
+    typeof payload.sessionId === "string" ? payload.sessionId : null;
+  let continueCount = 0;
+  const maxContinues = 80;
+
+  while (true) {
+    if (signal?.aborted) throw new ValidateAbortedError();
+
+    const body =
+      sessionId && continueCount > 0
+        ? { sessionId, stream: true }
+        : { ...payload, stream: true };
+
+    const outcome = await streamValidateOnce(body, onEvent, signal);
+
+    if (outcome.kind === "complete") {
+      return outcome.sessionId;
+    }
+
+    if (outcome.kind === "need_continue") {
+      sessionId = outcome.sessionId;
+      continueCount += 1;
+      if (continueCount > maxContinues) {
+        throw new Error(
+          "Validate bị tạm dừng quá nhiều lần (giới hạn server). Hãy mở lại phiên trong Lịch sử hoặc chạy lại.",
+        );
+      }
+      onEvent({
+        type: "phase",
+        phase: "client_continue",
+        percent: outcome.percent,
+        message: `Đang mở batch tiếp theo trên Vercel (${continueCount}) — ${outcome.remaining} comment còn lại...`,
+      });
+      // Nhỏ delay tránh rate-limit / cold start storm
+      await new Promise((r) => setTimeout(r, 400));
+      continue;
+    }
+
+    throw new Error("Stream validate kết thúc bất thường (không có complete).");
+  }
+}
+
+async function streamValidateOnce(
+  payload: Record<string, unknown>,
+  onEvent: (event: ValidateProgressEvent) => void,
+  signal?: AbortSignal,
+): Promise<
+  | { kind: "complete"; sessionId: string | null }
+  | {
+      kind: "need_continue";
+      sessionId: string;
+      remaining: number;
+      percent: number;
+    }
+> {
   const res = await fetch("/api/reviews/validate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...payload, stream: true }),
+    body: JSON.stringify(payload),
     signal,
   });
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
+    const raw =
+      typeof data.error === "string" ? data.error : "Validate thất bại";
+    const looksTimeout =
+      res.status === 504 ||
+      res.status === 502 ||
+      /timeout|cancel|FUNCTION_INVOCATION/i.test(raw);
     throw new Error(
-      typeof data.error === "string" ? data.error : "Validate thất bại",
+      looksTimeout
+        ? `${raw} — có thể do giới hạn thời gian Vercel. Hệ thống sẽ thử chia batch; hãy chạy lại nếu vẫn lỗi.`
+        : raw,
     );
   }
 
@@ -296,6 +378,26 @@ export async function streamValidate(
   const decoder = new TextDecoder();
   let buffer = "";
   let sessionId: string | null = null;
+  let sawTerminal = false;
+  let needContinue: {
+    sessionId: string;
+    remaining: number;
+    percent: number;
+  } | null = null;
+  let lastEventAt = Date.now();
+
+  const stallWatch = window.setInterval(() => {
+    if (signal?.aborted) return;
+    if (Date.now() - lastEventAt > 45_000) {
+      onEvent({
+        type: "heartbeat",
+        percent: 0,
+        message:
+          "Lâu không nhận được phản hồi từ server — có thể Vercel đang chậm hoặc sắp timeout. Đang chờ...",
+      });
+      lastEventAt = Date.now();
+    }
+  }, 15_000);
 
   const abortPromise = new Promise<never>((_, reject) => {
     if (signal?.aborted) {
@@ -322,6 +424,7 @@ export async function streamValidate(
       ]);
       if (done) break;
 
+      lastEventAt = Date.now();
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -330,7 +433,18 @@ export async function streamValidate(
         if (!line.trim()) continue;
         const event = JSON.parse(line) as ValidateProgressEvent;
         onEvent(event);
-        if (event.type === "complete") sessionId = event.sessionId;
+        if (event.type === "complete") {
+          sessionId = event.sessionId;
+          sawTerminal = true;
+        }
+        if (event.type === "need_continue") {
+          needContinue = {
+            sessionId: event.sessionId,
+            remaining: event.remaining,
+            percent: event.percent,
+          };
+          sawTerminal = true;
+        }
         if (event.type === "cancelled") {
           sessionId = event.sessionId;
           throw new ValidateAbortedError(event.message);
@@ -351,6 +465,7 @@ export async function streamValidate(
     }
     throw error;
   } finally {
+    window.clearInterval(stallWatch);
     try {
       reader.releaseLock();
     } catch {
@@ -358,5 +473,17 @@ export async function streamValidate(
     }
   }
 
-  return sessionId;
+  if (needContinue) {
+    return { kind: "need_continue", ...needContinue };
+  }
+
+  if (!sawTerminal) {
+    throw new Error(
+      sessionId
+        ? `Kết nối bị ngắt giữa chừng (thường gặp trên Vercel). Phiên ${sessionId} có thể tiếp tục — thử chạy lại hoặc mở Lịch sử.`
+        : "Kết nối bị ngắt giữa chừng và không có phản hồi từ server (timeout Vercel / proxy).",
+    );
+  }
+
+  return { kind: "complete", sessionId };
 }

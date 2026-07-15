@@ -781,6 +781,7 @@ export async function validateCommentWithAi(params: {
   hasMrDiff?: boolean;
   signal?: AbortSignal;
   onRetry?: (info: AiRetryInfo) => void;
+  timeoutMs?: number;
 }): Promise<{ result: ValidationAiResult; providerId: string }> {
   const providers = await getUserAiProviders(params.userId);
   const provider = selectProvider(providers, params.providerId);
@@ -815,6 +816,7 @@ ${params.fileContent}
   const { text, tokens } = await callAi(provider, VALIDATION_SYSTEM, userPrompt, {
     signal: params.signal,
     onRetry: params.onRetry,
+    timeoutMs: params.timeoutMs,
   });
   await recordTokenUsage(provider.id, tokens, "validate");
   const parsed = parseJson<ValidationAiResult>(text);

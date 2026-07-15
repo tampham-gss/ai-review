@@ -9,23 +9,47 @@ import {
   getUnresolvedComments,
   type MrFileChange,
 } from "@/lib/gitlab/client";
+import { findGitlabConnectionForHost } from "@/lib/gitlab/resolve-connection";
 import { validateCommentWithAi } from "@/lib/ai/providers";
 import { buildReviewCodeContext, extractZipToMap, findRelatedUsagesInFiles } from "@/lib/source/zip";
 import type { GitlabUnresolvedComment } from "@/types";
 import { z } from "zod";
 
-export const validateBodySchema = z.object({
-  connectionId: z.string(),
-  projectId: z.string(),
-  projectPath: z.string(),
-  mrIid: z.number().int(),
-  mrTitle: z.string().optional(),
-  sourceBranch: z.string(),
-  selectedCategoryIds: z.array(z.string()),
-  sourceType: z.enum(["gitlab", "zip"]).default("gitlab"),
-  zipBase64: z.string().optional(),
-  providerId: z.string().optional(),
-});
+export const validateBodySchema = z
+  .object({
+    /** Tiếp tục phiên validate đang dở (vượt timeout Vercel). */
+    sessionId: z.string().optional(),
+    connectionId: z.string().optional(),
+    projectId: z.string().optional(),
+    projectPath: z.string().optional(),
+    mrIid: z.number().int().optional(),
+    mrTitle: z.string().optional(),
+    sourceBranch: z.string().optional(),
+    selectedCategoryIds: z.array(z.string()).optional(),
+    sourceType: z.enum(["gitlab", "zip"]).optional(),
+    zipBase64: z.string().optional(),
+    providerId: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.sessionId) return;
+    const required = [
+      "connectionId",
+      "projectId",
+      "projectPath",
+      "mrIid",
+      "sourceBranch",
+      "selectedCategoryIds",
+    ] as const;
+    for (const key of required) {
+      if (data[key] === undefined || data[key] === null) {
+        ctx.addIssue({
+          code: "custom",
+          message: `${key} is required`,
+          path: [key],
+        });
+      }
+    }
+  });
 
 export type ValidateBody = z.infer<typeof validateBodySchema>;
 
@@ -65,6 +89,23 @@ export type ValidateProgressEvent =
       message: string;
     }
   | {
+      type: "heartbeat";
+      message: string;
+      percent: number;
+      current?: number;
+      total?: number;
+    }
+  | {
+      /** Hết budget thời gian (Vercel) — client gọi lại với sessionId */
+      type: "need_continue";
+      sessionId: string;
+      current: number;
+      total: number;
+      remaining: number;
+      percent: number;
+      message: string;
+    }
+  | {
       type: "complete";
       sessionId: string;
       total: number;
@@ -100,6 +141,13 @@ export class ValidateCancelledError extends Error {
   }
 }
 
+/** Để dưới giới hạn Vercel: Hobby ~60s, Pro maxDuration 300s. */
+function getBatchBudgetMs() {
+  const raw = Number(process.env.VALIDATE_BATCH_BUDGET_MS ?? "50000");
+  if (!Number.isFinite(raw) || raw < 15_000) return 50_000;
+  return Math.min(raw, 280_000);
+}
+
 function assertNotCancelled(signal?: AbortSignal) {
   if (signal?.aborted) {
     throw new ValidateCancelledError();
@@ -122,159 +170,305 @@ export async function runValidateJob(
   emit: (event: ValidateProgressEvent) => void,
   signal?: AbortSignal,
 ) {
-  let sessionId: string | null = null;
+  let sessionId: string | null = body.sessionId ?? null;
+  const budgetMs = getBatchBudgetMs();
+  const startedAt = Date.now();
+
+  const remainingBudget = () => budgetMs - (Date.now() - startedAt);
 
   try {
+    if (body.sessionId) {
+      return await continueValidateJob(userId, body.sessionId, emit, signal, {
+        remainingBudget,
+        startedAt,
+        budgetMs,
+      });
+    }
+
+    emit({
+      type: "phase",
+      phase: "init",
+      message: "Khởi tạo quy trình validate...",
+      percent: 2,
+    });
+    assertNotCancelled(signal);
+
+    const connection = await prisma.gitlabConnection.findFirst({
+      where: { id: body.connectionId!, userId },
+    });
+    if (!connection) {
+      throw new Error("GitLab connection not found");
+    }
+
+    const token = decrypt(connection.tokenEncrypted);
+
+    emit({
+      type: "phase",
+      phase: "fetching_comments",
+      message: "Đang lấy danh sách comment chưa resolved từ GitLab...",
+      percent: 8,
+    });
+    assertNotCancelled(signal);
+
+    const comments = await getUnresolvedComments(
+      connection.host,
+      token,
+      body.projectId!,
+      body.mrIid!,
+    );
+    assertNotCancelled(signal);
+
+    emit({
+      type: "comments_loaded",
+      total: comments.length,
+      message:
+        comments.length === 0
+          ? "Không có comment unresolved — sẽ tạo phiên trống."
+          : `Tìm thấy ${comments.length} comment cần validate.`,
+      percent: 15,
+    });
+
+    let sourceFiles: Map<string, string>;
+    let zipData: Buffer | null = null;
+    let mrChanges: MrFileChange[] = [];
+
+    emit({
+      type: "phase",
+      phase: "loading_mr_diff",
+      message: "Đang tải MR diff (code change của nhánh)...",
+      percent: 16,
+    });
+
+    mrChanges = await getMergeRequestChanges(
+      connection.host,
+      token,
+      body.projectId!,
+      body.mrIid!,
+    );
+
+    const sourceType = body.sourceType ?? "gitlab";
+
+    if (sourceType === "zip" && body.zipBase64) {
+      emit({
+        type: "phase",
+        phase: "loading_zip",
+        message: "Đang giải nén source ZIP...",
+        percent: 18,
+      });
+      zipData = Buffer.from(body.zipBase64, "base64");
+      sourceFiles = extractZipToMap(zipData);
+    } else {
+      emit({
+        type: "phase",
+        phase: "downloading_source",
+        message: "Đang tải file liên quan từ MR changes + comments...",
+        percent: 18,
+      });
+
+      const ref = await getMergeRequestRef(
+        connection.host,
+        token,
+        body.projectId!,
+        body.mrIid!,
+        body.sourceBranch!,
+      );
+
+      const commentFilePaths = comments
+        .map((c) => c.filePath)
+        .filter((p): p is string => !!p);
+
+      const changedFilePaths = [
+        ...new Set(
+          mrChanges
+            .flatMap((c) => [c.newPath, c.oldPath])
+            .filter((p): p is string => !!p),
+        ),
+      ].slice(0, 50);
+
+      const source = await downloadSourceForReview(
+        connection.host,
+        token,
+        body.projectId!,
+        ref,
+        commentFilePaths,
+        changedFilePaths,
+      );
+
+      sourceFiles = source.files;
+      if (source.buffer) zipData = source.buffer;
+
+      emit({
+        type: "phase",
+        phase: "source_ready",
+        message: `Source sẵn sàng (${source.files.size} file, ${mrChanges.length} file trong MR diff).`,
+        percent: 22,
+      });
+    }
+
+    emit({
+      type: "phase",
+      phase: "loading_conventions",
+      message: "Đang tải convention rules...",
+      percent: 25,
+    });
+
+    const conventions = await getConventionText(
+      userId,
+      body.selectedCategoryIds ?? [],
+    );
+
+    assertNotCancelled(signal);
+
+    const session = await prisma.reviewSession.create({
+      data: {
+        userId,
+        gitlabHost: connection.host,
+        projectId: body.projectId!,
+        projectPath: body.projectPath!,
+        mrIid: body.mrIid!,
+        mrTitle: body.mrTitle,
+        sourceBranch: body.sourceBranch!,
+        sourceType,
+        zipData: zipData ? Uint8Array.from(zipData) : undefined,
+        selectedCategoryIds: body.selectedCategoryIds ?? [],
+        aiProviderId: body.providerId,
+        status: "validating",
+      },
+    });
+    sessionId = session.id;
+
+    if (comments.length === 0) {
+      await prisma.reviewSession.update({
+        where: { id: session.id },
+        data: { status: "completed" },
+      });
+      emit({
+        type: "complete",
+        sessionId: session.id,
+        total: 0,
+        percent: 100,
+        message: "Hoàn tất — không có comment để validate.",
+      });
+      return session.id;
+    }
+
+    return await processCommentBatch({
+      userId,
+      sessionId: session.id,
+      providerId: body.providerId,
+      comments,
+      doneIds: new Set<string>(),
+      sourceFiles,
+      mrChanges,
+      conventions,
+      emit,
+      signal,
+      remainingBudget,
+    });
+  } catch (error) {
+    if (error instanceof ValidateCancelledError || signal?.aborted) {
+      if (sessionId) {
+        await prisma.reviewSession
+          .update({
+            where: { id: sessionId },
+            data: { status: "cancelled" },
+          })
+          .catch(() => undefined);
+      }
+      emit({
+        type: "cancelled",
+        sessionId,
+        message: "Đã dừng validate theo yêu cầu.",
+        percent: 0,
+      });
+      return sessionId;
+    }
+
+    if (sessionId) {
+      await prisma.reviewSession
+        .update({
+          where: { id: sessionId },
+          data: { status: "failed" },
+        })
+        .catch(() => undefined);
+    }
+
+    throw error;
+  }
+}
+
+async function continueValidateJob(
+  userId: string,
+  sessionId: string,
+  emit: (event: ValidateProgressEvent) => void,
+  signal: AbortSignal | undefined,
+  timing: {
+    remainingBudget: () => number;
+    startedAt: number;
+    budgetMs: number;
+  },
+) {
   emit({
     type: "phase",
-    phase: "init",
-    message: "Khởi tạo quy trình validate...",
-    percent: 2,
+    phase: "resume",
+    message: "Tiếp tục validate (batch tiếp theo trên server)...",
+    percent: 25,
   });
   assertNotCancelled(signal);
 
-  const connection = await prisma.gitlabConnection.findFirst({
-    where: { id: body.connectionId, userId },
+  const session = await prisma.reviewSession.findFirst({
+    where: { id: sessionId, userId },
+    include: { commentResults: { select: { gitlabDiscussionId: true } } },
   });
+  if (!session) {
+    throw new Error("Không tìm thấy phiên validate để tiếp tục");
+  }
+  if (session.status === "completed") {
+    emit({
+      type: "complete",
+      sessionId: session.id,
+      total: session.commentResults.length,
+      percent: 100,
+      message: "Phiên đã hoàn tất trước đó.",
+    });
+    return session.id;
+  }
+  if (session.status === "cancelled" || session.status === "failed") {
+    throw new Error(`Phiên validate đã ${session.status}, không thể tiếp tục.`);
+  }
+
+  await prisma.reviewSession.update({
+    where: { id: session.id },
+    data: { status: "validating" },
+  });
+
+  const connection =
+    (await findGitlabConnectionForHost(userId, session.gitlabHost)) ??
+    (await prisma.gitlabConnection.findFirst({ where: { userId } }));
   if (!connection) {
-    throw new Error("GitLab connection not found");
+    throw new Error("Không tìm thấy GitLab connection cho phiên này");
   }
 
   const token = decrypt(connection.tokenEncrypted);
-
-  emit({
-    type: "phase",
-    phase: "fetching_comments",
-    message: "Đang lấy danh sách comment chưa resolved từ GitLab...",
-    percent: 8,
-  });
-  assertNotCancelled(signal);
-
   const comments = await getUnresolvedComments(
     connection.host,
     token,
-    body.projectId,
-    body.mrIid,
+    session.projectId,
+    session.mrIid,
   );
-  assertNotCancelled(signal);
+  const doneIds = new Set(
+    session.commentResults.map((c) => c.gitlabDiscussionId),
+  );
 
   emit({
     type: "comments_loaded",
     total: comments.length,
-    message:
-      comments.length === 0
-        ? "Không có comment unresolved — sẽ tạo phiên trống."
-        : `Tìm thấy ${comments.length} comment cần validate.`,
-    percent: 15,
+    message: `Tiếp tục: đã xong ${doneIds.size}/${comments.length} comment.`,
+    percent: calcPercent(doneIds.size, Math.max(comments.length, 1), 25, 75),
   });
 
-  let sourceFiles: Map<string, string>;
-  let zipData: Buffer | null = null;
-  let mrChanges: MrFileChange[] = [];
-
-  emit({
-    type: "phase",
-    phase: "loading_mr_diff",
-    message: "Đang tải MR diff (code change của nhánh)...",
-    percent: 16,
-  });
-
-  mrChanges = await getMergeRequestChanges(
-    connection.host,
-    token,
-    body.projectId,
-    body.mrIid,
-  );
-
-  if (body.sourceType === "zip" && body.zipBase64) {
-    emit({
-      type: "phase",
-      phase: "loading_zip",
-      message: "Đang giải nén source ZIP...",
-      percent: 18,
-    });
-    zipData = Buffer.from(body.zipBase64, "base64");
-    sourceFiles = extractZipToMap(zipData);
-  } else {
-    emit({
-      type: "phase",
-      phase: "downloading_source",
-      message: "Đang tải file liên quan từ MR changes + comments...",
-      percent: 18,
-    });
-
-    const ref = await getMergeRequestRef(
-      connection.host,
-      token,
-      body.projectId,
-      body.mrIid,
-      body.sourceBranch,
-    );
-
-    const commentFilePaths = comments
-      .map((c) => c.filePath)
-      .filter((p): p is string => !!p);
-
-    // Ưu tiên toàn bộ file trong MR diff (cap) + file từ comment/note
-    // để AI kiểm được usage liên quan trong cùng nhánh change
-    const changedFilePaths = [
-      ...new Set(
-        mrChanges
-          .flatMap((c) => [c.newPath, c.oldPath])
-          .filter((p): p is string => !!p),
-      ),
-    ].slice(0, 50);
-
-    const source = await downloadSourceForReview(
-      connection.host,
-      token,
-      body.projectId,
-      ref,
-      commentFilePaths,
-      changedFilePaths,
-    );
-
-    sourceFiles = source.files;
-    if (source.buffer) zipData = source.buffer;
-
-    emit({
-      type: "phase",
-      phase: "source_ready",
-      message: `Source sẵn sàng (${source.files.size} file, ${mrChanges.length} file trong MR diff).`,
-      percent: 22,
-    });
-  }
-
-  emit({
-    type: "phase",
-    phase: "loading_conventions",
-    message: "Đang tải convention rules...",
-    percent: 25,
-  });
-
-  const conventions = await getConventionText(userId, body.selectedCategoryIds);
-
-  assertNotCancelled(signal);
-
-  const session = await prisma.reviewSession.create({
-    data: {
-      userId,
-      gitlabHost: connection.host,
-      projectId: body.projectId,
-      projectPath: body.projectPath,
-      mrIid: body.mrIid,
-      mrTitle: body.mrTitle,
-      sourceBranch: body.sourceBranch,
-      sourceType: body.sourceType,
-      zipData: zipData ? Uint8Array.from(zipData) : undefined,
-      selectedCategoryIds: body.selectedCategoryIds,
-      aiProviderId: body.providerId,
-      status: "validating",
-    },
-  });
-  sessionId = session.id;
-
-  if (comments.length === 0) {
+  const pending = comments.filter((c) => !doneIds.has(c.discussionId));
+  if (pending.length === 0) {
     await prisma.reviewSession.update({
       where: { id: session.id },
       data: { status: "completed" },
@@ -282,20 +476,128 @@ export async function runValidateJob(
     emit({
       type: "complete",
       sessionId: session.id,
-      total: 0,
+      total: comments.length,
       percent: 100,
-      message: "Hoàn tất — không có comment để validate.",
+      message: `Hoàn tất validate ${comments.length} comment.`,
     });
     return session.id;
   }
 
-  const total = comments.length;
+  let sourceFiles: Map<string, string>;
+  let mrChanges: MrFileChange[] = [];
 
-  for (let i = 0; i < comments.length; i++) {
+  mrChanges = await getMergeRequestChanges(
+    connection.host,
+    token,
+    session.projectId,
+    session.mrIid,
+  );
+
+  if (session.zipData) {
+    sourceFiles = extractZipToMap(Buffer.from(session.zipData));
+  } else {
+    const ref = await getMergeRequestRef(
+      connection.host,
+      token,
+      session.projectId,
+      session.mrIid,
+      session.sourceBranch,
+    );
+    const commentFilePaths = comments
+      .map((c) => c.filePath)
+      .filter((p): p is string => !!p);
+    const changedFilePaths = [
+      ...new Set(
+        mrChanges
+          .flatMap((c) => [c.newPath, c.oldPath])
+          .filter((p): p is string => !!p),
+      ),
+    ].slice(0, 50);
+    const source = await downloadSourceForReview(
+      connection.host,
+      token,
+      session.projectId,
+      ref,
+      commentFilePaths,
+      changedFilePaths,
+    );
+    sourceFiles = source.files;
+  }
+
+  const conventions = await getConventionText(
+    userId,
+    session.selectedCategoryIds,
+  );
+
+  return await processCommentBatch({
+    userId,
+    sessionId: session.id,
+    providerId: session.aiProviderId ?? undefined,
+    comments,
+    doneIds,
+    sourceFiles,
+    mrChanges,
+    conventions,
+    emit,
+    signal,
+    remainingBudget: timing.remainingBudget,
+  });
+}
+
+async function processCommentBatch(params: {
+  userId: string;
+  sessionId: string;
+  providerId?: string | null;
+  comments: GitlabUnresolvedComment[];
+  doneIds: Set<string>;
+  sourceFiles: Map<string, string>;
+  mrChanges: MrFileChange[];
+  conventions: string;
+  emit: (event: ValidateProgressEvent) => void;
+  signal?: AbortSignal;
+  remainingBudget: () => number;
+}) {
+  const {
+    userId,
+    sessionId,
+    providerId,
+    comments,
+    doneIds,
+    sourceFiles,
+    mrChanges,
+    conventions,
+    emit,
+    signal,
+    remainingBudget,
+  } = params;
+
+  const total = comments.length;
+  const pendingIndexes = comments
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => !doneIds.has(c.discussionId));
+
+  for (const { c: comment } of pendingIndexes) {
     assertNotCancelled(signal);
 
-    const comment = comments[i];
-    const current = i + 1;
+    // Giữ headroom cho AI call + emit continue (~12s tối thiểu)
+    if (remainingBudget() < 12_000) {
+      const remaining = comments.filter((c) => !doneIds.has(c.discussionId)).length;
+      const current = doneIds.size;
+      emit({
+        type: "need_continue",
+        sessionId,
+        current,
+        total,
+        remaining,
+        percent: calcPercent(current, total, 25, 75),
+        message:
+          `Tạm dừng batch (giới hạn thời gian server / Vercel). ` +
+          `Đã xong ${current}/${total} — tự tiếp tục...`,
+      });
+      return sessionId;
+    }
+
+    const current = doneIds.size + 1;
     const percent = calcPercent(current, total, 25, 75);
 
     emit({
@@ -321,11 +623,13 @@ export async function runValidateJob(
       relatedSnippets,
     });
 
+    const timeoutMs = Math.min(90_000, Math.max(20_000, remainingBudget() - 8_000));
+
     let result;
     try {
       ({ result } = await validateCommentWithAi({
         userId,
-        providerId: body.providerId,
+        providerId: providerId ?? undefined,
         conventions,
         commentBody: comment.body,
         filePath: comment.filePath,
@@ -334,6 +638,7 @@ export async function runValidateJob(
         line: comment.line,
         hasMrDiff: !!diffText,
         signal,
+        timeoutMs,
         onRetry: (info) => {
           emit({
             type: "retry",
@@ -356,16 +661,14 @@ export async function runValidateJob(
       }
       const reason =
         error instanceof Error ? error.message : "Lỗi AI không xác định";
-      throw new Error(
-        `Dừng tại comment ${current}/${total}: ${reason}`,
-      );
+      throw new Error(`Dừng tại comment ${current}/${total}: ${reason}`);
     }
 
     assertNotCancelled(signal);
 
     await prisma.commentValidationResult.create({
       data: {
-        sessionId: session.id,
+        sessionId,
         gitlabDiscussionId: comment.discussionId,
         gitlabNoteId: comment.noteId,
         body: comment.body,
@@ -382,6 +685,8 @@ export async function runValidateJob(
       },
     });
 
+    doneIds.add(comment.discussionId);
+
     emit({
       type: "comment_done",
       current,
@@ -393,45 +698,19 @@ export async function runValidateJob(
   }
 
   await prisma.reviewSession.update({
-    where: { id: session.id },
+    where: { id: sessionId },
     data: { status: "completed" },
   });
 
   emit({
     type: "complete",
-    sessionId: session.id,
+    sessionId,
     total,
     percent: 100,
     message: `Hoàn tất validate ${total} comment.`,
   });
 
-  return session.id;
-  } catch (error) {
-    if (error instanceof ValidateCancelledError || signal?.aborted) {
-      if (sessionId) {
-        await prisma.reviewSession.update({
-          where: { id: sessionId },
-          data: { status: "cancelled" },
-        }).catch(() => undefined);
-      }
-      emit({
-        type: "cancelled",
-        sessionId,
-        message: "Đã dừng validate theo yêu cầu.",
-        percent: 0,
-      });
-      return sessionId;
-    }
-
-    if (sessionId) {
-      await prisma.reviewSession.update({
-        where: { id: sessionId },
-        data: { status: "failed" },
-      }).catch(() => undefined);
-    }
-
-    throw error;
-  }
+  return sessionId;
 }
 
 function toCommentPreview(comment: GitlabUnresolvedComment) {
