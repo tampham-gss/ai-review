@@ -64,6 +64,15 @@ export function applyProgressEvent(
           ...prev.doneItems,
         ].slice(0, 8),
       };
+    case "retry":
+      return {
+        ...prev,
+        status: "running",
+        percent: event.percent,
+        phaseMessage: event.message,
+        total: event.total,
+        current: event.current,
+      };
     case "complete":
       return {
         ...prev,
@@ -87,6 +96,9 @@ export function applyProgressEvent(
         status: "error",
         error: event.message,
         phaseMessage: event.message,
+        ...(event.current !== undefined ? { current: event.current } : {}),
+        ...(event.total !== undefined ? { total: event.total } : {}),
+        currentComment: null,
       };
     default:
       return prev;
@@ -166,6 +178,13 @@ export function ValidateProgressPanel({
               Comment: {state.current}/{state.total}
             </p>
           )}
+
+          {state.status === "running" &&
+            /thử lại|timeout|rate limit|kết nối lại/i.test(state.phaseMessage) && (
+              <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+                AI đang gặp vấn đề tạm thời — hệ thống tự thử lại, vui lòng chờ.
+              </p>
+            )}
 
           {state.currentComment && state.status === "running" && (
             <div className="animate-pulse rounded-xl border border-violet-500/30 bg-violet-500/5 p-4">
@@ -278,14 +297,29 @@ export async function streamValidate(
   let buffer = "";
   let sessionId: string | null = null;
 
+  const abortPromise = new Promise<never>((_, reject) => {
+    if (signal?.aborted) {
+      reject(new ValidateAbortedError());
+      return;
+    }
+    const onAbort = () => {
+      void reader.cancel().catch(() => undefined);
+      reject(new ValidateAbortedError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+
   try {
     while (true) {
       if (signal?.aborted) {
-        await reader.cancel();
+        await reader.cancel().catch(() => undefined);
         throw new ValidateAbortedError();
       }
 
-      const { done, value } = await reader.read();
+      const { done, value } = await Promise.race([
+        reader.read(),
+        abortPromise,
+      ]);
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -305,12 +339,23 @@ export async function streamValidate(
       }
     }
   } catch (error) {
-    if (signal?.aborted || error instanceof ValidateAbortedError) {
+    if (
+      signal?.aborted ||
+      error instanceof ValidateAbortedError ||
+      (error instanceof DOMException && error.name === "AbortError") ||
+      (error instanceof Error && error.name === "AbortError")
+    ) {
       throw error instanceof ValidateAbortedError
         ? error
         : new ValidateAbortedError();
     }
     throw error;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // ignore
+    }
   }
 
   return sessionId;

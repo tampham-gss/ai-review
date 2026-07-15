@@ -78,8 +78,19 @@ export type ValidateProgressEvent =
       percent: number;
     }
   | {
+      type: "retry";
+      current: number;
+      total: number;
+      attempt: number;
+      maxAttempts: number;
+      percent: number;
+      message: string;
+    }
+  | {
       type: "error";
       message: string;
+      current?: number;
+      total?: number;
     };
 
 export class ValidateCancelledError extends Error {
@@ -310,17 +321,45 @@ export async function runValidateJob(
       relatedSnippets,
     });
 
-    const { result } = await validateCommentWithAi({
-      userId,
-      providerId: body.providerId,
-      conventions,
-      commentBody: comment.body,
-      filePath: comment.filePath,
-      fileContent,
-      severity: comment.severity,
-      line: comment.line,
-      hasMrDiff: !!diffText,
-    });
+    let result;
+    try {
+      ({ result } = await validateCommentWithAi({
+        userId,
+        providerId: body.providerId,
+        conventions,
+        commentBody: comment.body,
+        filePath: comment.filePath,
+        fileContent,
+        severity: comment.severity,
+        line: comment.line,
+        hasMrDiff: !!diffText,
+        signal,
+        onRetry: (info) => {
+          emit({
+            type: "retry",
+            current,
+            total,
+            attempt: info.attempt,
+            maxAttempts: info.maxAttempts,
+            percent,
+            message:
+              `Comment ${current}/${total}: ${info.reason} ` +
+              `(thử lại ${info.attempt}/${info.maxAttempts}, chờ ${Math.ceil(info.delayMs / 1000)}s)...`,
+          });
+        },
+      }));
+    } catch (error) {
+      if (error instanceof ValidateCancelledError || signal?.aborted) {
+        throw error instanceof ValidateCancelledError
+          ? error
+          : new ValidateCancelledError();
+      }
+      const reason =
+        error instanceof Error ? error.message : "Lỗi AI không xác định";
+      throw new Error(
+        `Dừng tại comment ${current}/${total}: ${reason}`,
+      );
+    }
 
     assertNotCancelled(signal);
 
@@ -373,7 +412,7 @@ export async function runValidateJob(
         await prisma.reviewSession.update({
           where: { id: sessionId },
           data: { status: "cancelled" },
-        });
+        }).catch(() => undefined);
       }
       emit({
         type: "cancelled",
@@ -383,6 +422,14 @@ export async function runValidateJob(
       });
       return sessionId;
     }
+
+    if (sessionId) {
+      await prisma.reviewSession.update({
+        where: { id: sessionId },
+        data: { status: "failed" },
+      }).catch(() => undefined);
+    }
+
     throw error;
   }
 }

@@ -38,6 +38,11 @@ export async function POST(request: Request) {
   }
 
   const encoder = new TextEncoder();
+  const jobAbort = new AbortController();
+  const onRequestAbort = () => jobAbort.abort();
+  if (request.signal.aborted) jobAbort.abort();
+  else request.signal.addEventListener("abort", onRequestAbort, { once: true });
+
   const readable = new ReadableStream({
     async start(controller) {
       const send = (event: ValidateProgressEvent) => {
@@ -45,19 +50,28 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
         } catch {
           // Client đã abort / stream đã đóng
+          jobAbort.abort();
         }
       };
 
       try {
-        await runValidateJob(authResult.userId, body, send, request.signal);
+        await runValidateJob(authResult.userId, body, send, jobAbort.signal);
       } catch (error) {
-        if (!request.signal.aborted) {
+        if (!jobAbort.signal.aborted) {
           send({
             type: "error",
             message: error instanceof Error ? error.message : "Validate thất bại",
           });
+        } else {
+          send({
+            type: "cancelled",
+            sessionId: null,
+            message: "Đã dừng validate theo yêu cầu.",
+            percent: 0,
+          });
         }
       } finally {
+        request.signal.removeEventListener("abort", onRequestAbort);
         try {
           controller.close();
         } catch {
@@ -66,7 +80,7 @@ export async function POST(request: Request) {
       }
     },
     cancel() {
-      // AbortSignal từ request đã được truyền vào job
+      jobAbort.abort();
     },
   });
 

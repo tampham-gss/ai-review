@@ -36,9 +36,102 @@ function resolveModel(provider: AiProviderName, model?: string | null): string {
   return getDefaultModel(provider);
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal) {
+  if (!signal) return new Promise<void>((resolve) => setTimeout(resolve, ms));
+  if (signal.aborted) return Promise.reject(createAbortError());
+
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(createAbortError());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
+
+const AI_REQUEST_TIMEOUT_MS = 90_000;
+
+function createAbortError(message = "Đã hủy request AI") {
+  const err = new Error(message);
+  err.name = "AbortError";
+  return err;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { name?: string; message?: string };
+  return (
+    e.name === "AbortError" ||
+    e.name === "APIUserAbortError" ||
+    /aborted|abort/i.test(e.message ?? "")
+  );
+}
+
+function isRetryableAiError(error: unknown): boolean {
+  if (isAbortError(error)) return false;
+  if (isRateLimitError(error)) return true;
+  const status = getErrorStatus(error);
+  if (status !== null && status >= 500) return true;
+  const raw = error instanceof Error ? error.message : String(error);
+  const lower = raw.toLowerCase();
+  return (
+    lower.includes("timeout") ||
+    lower.includes("timed out") ||
+    lower.includes("etimedout") ||
+    lower.includes("econnreset") ||
+    lower.includes("econnrefused") ||
+    lower.includes("fetch failed") ||
+    lower.includes("network") ||
+    lower.includes("socket") ||
+    lower.includes("temporarily unavailable") ||
+    lower.includes("overloaded") ||
+    lower.includes("503") ||
+    lower.includes("502") ||
+    lower.includes("504")
+  );
+}
+
+function mergeAbortSignals(
+  timeoutMs: number,
+  parent?: AbortSignal,
+): { signal: AbortSignal; cleanup: () => void; timedOut: () => boolean } {
+  const controller = new AbortController();
+  let didTimeout = false;
+
+  const timer = setTimeout(() => {
+    didTimeout = true;
+    controller.abort(createAbortError(`AI timeout sau ${Math.round(timeoutMs / 1000)}s`));
+  }, timeoutMs);
+
+  const onParentAbort = () => {
+    controller.abort(parent?.reason ?? createAbortError());
+  };
+
+  if (parent) {
+    if (parent.aborted) onParentAbort();
+    else parent.addEventListener("abort", onParentAbort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    timedOut: () => didTimeout,
+    cleanup: () => {
+      clearTimeout(timer);
+      parent?.removeEventListener("abort", onParentAbort);
+    },
+  };
+}
+
+export type AiRetryInfo = {
+  attempt: number;
+  maxAttempts: number;
+  delayMs: number;
+  reason: string;
+};
 
 function getErrorStatus(error: unknown): number | null {
   if (!error || typeof error !== "object") return null;
@@ -147,6 +240,30 @@ function formatAiError(
     lower.includes("api key not valid")
   ) {
     return `${providerLabel}: API key không hợp lệ hoặc không có quyền truy cập (401).`;
+  }
+
+  if (
+    lower.includes("timeout") ||
+    lower.includes("timed out") ||
+    lower.includes("etimedout")
+  ) {
+    return (
+      `${providerLabel} không phản hồi kịp (timeout) với model "${modelLabel}". ` +
+      `Model có thể đang quá tải / mạng bị ngắt. Hãy thử lại hoặc đổi provider.`
+    );
+  }
+
+  if (
+    lower.includes("econnreset") ||
+    lower.includes("econnrefused") ||
+    lower.includes("fetch failed") ||
+    lower.includes("network") ||
+    lower.includes("socket hang up")
+  ) {
+    return (
+      `${providerLabel}: mất kết nối mạng tới API (model "${modelLabel}"). ` +
+      `Kiểm tra mạng / VPN rồi chạy lại.`
+    );
   }
 
   if (
@@ -309,6 +426,7 @@ async function callOpenAI(
   provider: AiProviderConfig,
   system: string,
   user: string,
+  signal?: AbortSignal,
 ): Promise<{ text: string; tokens: number }> {
   const meta = getProviderMeta(provider.provider);
   const client = new OpenAI({
@@ -318,15 +436,18 @@ async function callOpenAI(
         ? resolveBaseUrl(provider.provider, provider.baseUrl)
         : undefined,
   });
-  const response = await client.chat.completions.create({
-    model: provider.model,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-    temperature: 0.2,
-  });
+  const response = await client.chat.completions.create(
+    {
+      model: provider.model,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      temperature: 0.2,
+    },
+    { signal },
+  );
 
   const text = response.choices?.[0]?.message?.content ?? "{}";
   const tokens = response.usage?.total_tokens ?? 0;
@@ -337,14 +458,18 @@ async function callAnthropic(
   provider: AiProviderConfig,
   system: string,
   user: string,
+  signal?: AbortSignal,
 ): Promise<{ text: string; tokens: number }> {
   const client = new Anthropic({ apiKey: provider.apiKey });
-  const response = await client.messages.create({
-    model: provider.model,
-    max_tokens: 4096,
-    system,
-    messages: [{ role: "user", content: user }],
-  });
+  const response = await client.messages.create(
+    {
+      model: provider.model,
+      max_tokens: 4096,
+      system,
+      messages: [{ role: "user", content: user }],
+    },
+    { signal },
+  );
 
   const text =
     response.content?.[0]?.type === "text" ? response.content[0].text : "{}";
@@ -357,23 +482,34 @@ async function callAi(
   provider: AiProviderConfig,
   system: string,
   user: string,
+  options?: {
+    signal?: AbortSignal;
+    onRetry?: (info: AiRetryInfo) => void;
+    timeoutMs?: number;
+  },
 ): Promise<{ text: string; tokens: number }> {
   const meta = getProviderMeta(provider.provider);
   if (!meta) throw new Error(`Provider không hỗ trợ: ${provider.provider}`);
 
   const maxAttempts = 4;
+  const timeoutMs = options?.timeoutMs ?? AI_REQUEST_TIMEOUT_MS;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (options?.signal?.aborted) {
+      throw createAbortError();
+    }
+
+    const deadline = mergeAbortSignals(timeoutMs, options?.signal);
     try {
       let result: { text: string; tokens: number };
       switch (meta.type) {
         case "openai":
         case "openai_compatible":
-          result = await callOpenAI(provider, system, user);
+          result = await callOpenAI(provider, system, user, deadline.signal);
           break;
         case "anthropic":
-          result = await callAnthropic(provider, system, user);
+          result = await callAnthropic(provider, system, user, deadline.signal);
           break;
         default:
           throw new Error(`Provider không hỗ trợ: ${provider.provider}`);
@@ -381,25 +517,62 @@ async function callAi(
 
       // Pace free-tier providers khi validate hàng loạt comment
       if (provider.provider === "cerebras" || provider.provider === "groq") {
-        await sleep(350);
+        await sleep(350, options?.signal);
+      } else if (attempt === 1) {
+        await sleep(120, options?.signal);
       }
 
       return result;
     } catch (error) {
       lastError = error;
-      if (!isRateLimitError(error) || attempt === maxAttempts) {
+
+      if (options?.signal?.aborted || (isAbortError(error) && !deadline.timedOut())) {
+        throw createAbortError();
+      }
+
+      const timedOut = deadline.timedOut();
+      const retryable = timedOut || isRetryableAiError(error);
+      if (!retryable || attempt === maxAttempts) {
+        if (timedOut) {
+          throw new Error(
+            formatAiError(
+              new Error(`timeout sau ${Math.round(timeoutMs / 1000)}s`),
+              provider.provider,
+              provider.model,
+            ),
+          );
+        }
         throw new Error(
           formatAiError(error, provider.provider, provider.model),
         );
       }
 
-      // Cerebras/Groq free tier: backoff dài hơn
       const baseDelay =
-        provider.provider === "cerebras" || provider.provider === "groq"
-          ? 4000
-          : 2000;
+        isRateLimitError(error) &&
+        (provider.provider === "cerebras" || provider.provider === "groq")
+          ? 5000
+          : isRateLimitError(error)
+            ? 3000
+            : timedOut
+              ? 2500
+              : 2000;
       const delayMs = baseDelay * attempt + Math.floor(Math.random() * 500);
-      await sleep(delayMs);
+      const reason = timedOut
+        ? "timeout — đang thử kết nối lại"
+        : isRateLimitError(error)
+          ? "rate limit — đang chờ rồi thử lại"
+          : "lỗi mạng/API — đang thử kết nối lại";
+
+      options?.onRetry?.({
+        attempt,
+        maxAttempts,
+        delayMs,
+        reason,
+      });
+
+      await sleep(delayMs, options?.signal);
+    } finally {
+      deadline.cleanup();
     }
   }
 
@@ -606,6 +779,8 @@ export async function validateCommentWithAi(params: {
   severity: string | null;
   line?: number | null;
   hasMrDiff?: boolean;
+  signal?: AbortSignal;
+  onRetry?: (info: AiRetryInfo) => void;
 }): Promise<{ result: ValidationAiResult; providerId: string }> {
   const providers = await getUserAiProviders(params.userId);
   const provider = selectProvider(providers, params.providerId);
@@ -637,7 +812,10 @@ ${params.fileContent}
 5. Không prefix bot trong suggestedReply.
 `;
 
-  const { text, tokens } = await callAi(provider, VALIDATION_SYSTEM, userPrompt);
+  const { text, tokens } = await callAi(provider, VALIDATION_SYSTEM, userPrompt, {
+    signal: params.signal,
+    onRetry: params.onRetry,
+  });
   await recordTokenUsage(provider.id, tokens, "validate");
   const parsed = parseJson<ValidationAiResult>(text);
   const result = sanitizeValidationReply(parsed, params.fileContent);

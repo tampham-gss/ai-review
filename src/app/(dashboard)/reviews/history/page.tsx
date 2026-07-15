@@ -34,6 +34,8 @@ function statusBadge(status: string) {
       return <Badge variant="violet">Đang chạy</Badge>;
     case "cancelled":
       return <Badge variant="invalid">Đã dừng</Badge>;
+    case "failed":
+      return <Badge variant="high">Lỗi</Badge>;
     default:
       return <Badge>{status}</Badge>;
   }

@@ -46,6 +46,7 @@ interface Category {
 export default function NewReviewPage() {
   const router = useRouter();
   const abortRef = useRef<AbortController | null>(null);
+  const stopSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -145,9 +146,38 @@ export default function NewReviewPage() {
     toast.info(`Đã chọn ZIP: ${file.name}`);
   }
 
+  function clearStopSafetyTimer() {
+    if (stopSafetyTimerRef.current) {
+      clearTimeout(stopSafetyTimerRef.current);
+      stopSafetyTimerRef.current = null;
+    }
+  }
+
   function stopValidate() {
     setStopping(true);
+    setProgress((prev) => ({
+      ...prev,
+      phaseMessage: "Đang dừng validate — hủy request AI...",
+    }));
     abortRef.current?.abort();
+
+    // Nếu server/AI kẹt, vẫn mở khóa UI sau vài giây
+    clearStopSafetyTimer();
+    stopSafetyTimerRef.current = setTimeout(() => {
+      setStopping(false);
+      setRunning(false);
+      setProgress((prev) => {
+        if (prev.status !== "running") return prev;
+        return {
+          ...prev,
+          status: "cancelled",
+          phaseMessage: "Đã dừng validate.",
+          currentComment: null,
+        };
+      });
+      toast.info("Đã ngắt validate");
+      abortRef.current = null;
+    }, 6_000);
   }
 
   async function runValidate() {
@@ -164,6 +194,7 @@ export default function NewReviewPage() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    clearStopSafetyTimer();
 
     setRunning(true);
     setStopping(false);
@@ -206,10 +237,17 @@ export default function NewReviewPage() {
       } else {
         const message = err instanceof Error ? err.message : "Validate thất bại";
         setError(message);
-        setProgress((prev) => ({ ...prev, status: "error", error: message }));
+        setProgress((prev) => ({
+          ...prev,
+          status: "error",
+          error: message,
+          phaseMessage: message,
+          currentComment: null,
+        }));
         toast.error(message);
       }
     } finally {
+      clearStopSafetyTimer();
       setRunning(false);
       setStopping(false);
       abortRef.current = null;
