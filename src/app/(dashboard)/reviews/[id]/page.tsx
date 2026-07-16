@@ -289,12 +289,20 @@ export default function ReviewSessionPage() {
       }
       if (typeof data.pushError === "string" && data.pushError) {
         toast.error(
-          `Đã lưu ${data.savedCount ?? 0} reply nhưng push lỗi: ${data.pushError}`,
+          `Đã lưu ${data.savedCount ?? 0}/${data.parsedCount ?? data.savedCount ?? 0} reply nhưng push lỗi: ${data.pushError}`,
         );
       } else {
+        const parsed = data.parsedCount ?? data.savedCount ?? 0;
+        const saved = data.savedCount ?? 0;
+        const pushed = data.pushedCount ?? 0;
         toast.success(
-          `Đã lưu & push ${data.pushedCount ?? data.savedCount ?? 0} reply lên GitLab`,
+          `Đã tách ${parsed} khối → lưu ${saved} · push ${pushed} reply lên GitLab`,
         );
+        if (typeof data.unmatchedCount === "number" && data.unmatchedCount > 0) {
+          toast.info(
+            `${data.unmatchedCount} khối có Comment ID không khớp phiên này (đã bỏ qua)`,
+          );
+        }
       }
       setBatchPaste("");
       await loadSession();
@@ -745,7 +753,7 @@ export default function ReviewSessionPage() {
               </li>
             </ol>
             <Textarea
-              placeholder="Paste batch output từ Cursor (nhiều khối ## Đánh giá + Comment ID)..."
+              placeholder="Paste file reply batch (## #1 — `commentId` + ## Đánh giá ...)..."
               value={batchPaste}
               onChange={(e) => setBatchPaste(e.target.value)}
               className="min-h-[100px] font-mono text-xs"

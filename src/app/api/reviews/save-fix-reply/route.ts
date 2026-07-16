@@ -36,6 +36,8 @@ export async function POST(request: Request) {
     }
 
     const updates: Array<{ id: string; reply: string }> = [];
+    let parsedCount = 0;
+    let unmatchedIds: string[] = [];
 
     if (body.commentId && body.reply) {
       const target = session.commentResults.find((c) => c.id === body.commentId);
@@ -46,8 +48,10 @@ export async function POST(request: Request) {
         );
       }
       updates.push({ id: body.commentId, reply: body.reply.trim() });
+      parsedCount = 1;
     } else if (body.pastedText) {
       const blocks = parseFixReplyBlocks(body.pastedText);
+      parsedCount = blocks.length;
       if (blocks.length === 0) {
         return NextResponse.json(
           { error: "Không parse được reply từ nội dung paste" },
@@ -55,21 +59,29 @@ export async function POST(request: Request) {
         );
       }
 
-      const unusedValid = session.commentResults.filter((c) =>
-        blocks.some((b) => !b.commentId)
-          ? true
-          : blocks.some((b) => b.commentId === c.id),
+      const validById = new Map(
+        session.commentResults.map((c) => [c.id, c] as const),
       );
+      const usedIds = new Set<string>();
+      const hasAnyId = blocks.some((b) => !!b.commentId);
 
-      for (let i = 0; i < blocks.length; i++) {
-        const block = blocks[i];
+      for (const block of blocks) {
         let commentId = block.commentId;
-        if (!commentId) {
-          commentId = unusedValid[i]?.id;
+
+        if (commentId) {
+          if (!validById.has(commentId)) {
+            unmatchedIds.push(commentId);
+            continue;
+          }
+        } else if (!hasAnyId) {
+          commentId =
+            session.commentResults.find((c) => !usedIds.has(c.id))?.id ?? null;
+        } else {
+          continue;
         }
-        if (!commentId) continue;
-        const exists = session.commentResults.some((c) => c.id === commentId);
-        if (!exists) continue;
+
+        if (!commentId || usedIds.has(commentId)) continue;
+        usedIds.add(commentId);
         updates.push({ id: commentId, reply: block.reply });
       }
 
@@ -77,7 +89,9 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "Không khớp được Comment ID với các review VALID. Hãy giữ dòng Comment ID trong output Cursor, hoặc paste từng comment.",
+              unmatchedIds.length > 0
+                ? `Đã tách ${blocks.length} khối nhưng không khớp Comment ID nào với review VALID trong phiên. Ví dụ ID: ${unmatchedIds.slice(0, 3).join(", ")}`
+                : "Không khớp được Comment ID với các review VALID. Hãy giữ dòng ## #N — `commentId` trong file reply.",
           },
           { status: 400 },
         );
@@ -126,6 +140,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       savedCount: updates.length,
       savedIds,
+      parsedCount,
+      unmatchedCount: unmatchedIds.length,
+      unmatchedIds: unmatchedIds.slice(0, 10),
       pushedCount: pushedIds.length,
       pushedIds,
       pushError,
