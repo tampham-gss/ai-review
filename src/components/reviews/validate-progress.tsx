@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ValidateProgressEvent } from "@/lib/reviews/validate-runner";
-import { Bot, CheckCircle2, FileCode2, Loader2, Square } from "lucide-react";
+import { Bot, CheckCircle2, FileCode2, Loader2, Square, X } from "lucide-react";
 
 export interface ValidateProgressState {
   percent: number;
@@ -100,6 +102,7 @@ export function applyProgressEvent(
         phaseMessage: event.message,
         total: event.total,
         sessionId: event.sessionId,
+        currentComment: null,
       };
     case "cancelled":
       return {
@@ -130,6 +133,8 @@ interface ValidateProgressPanelProps {
   onClose?: () => void;
   onStop?: () => void;
   stopping?: boolean;
+  /** Tiêu đề khi đang chạy (vd. tiếp tục validate) */
+  runningTitle?: string;
 }
 
 export function ValidateProgressPanel({
@@ -138,42 +143,84 @@ export function ValidateProgressPanel({
   onClose,
   onStop,
   stopping = false,
+  runningTitle = "AI đang validate review...",
 }: ValidateProgressPanelProps) {
-  if (!visible) return null;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [visible]);
+
+  if (!visible || !mounted) return null;
 
   const canClose =
     state.status === "error" ||
     state.status === "cancelled" ||
     state.status === "complete";
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <Card className="w-full max-w-xl border-violet-500/30 shadow-2xl shadow-violet-500/10">
-        <CardHeader>
-          <CardTitle className="flex min-w-0 items-center gap-2 text-lg">
-            {state.status === "complete" ? (
-              <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
-            ) : state.status === "error" || state.status === "cancelled" ? (
-              <Bot className="h-5 w-5 shrink-0 text-red-400" />
-            ) : (
-              <Loader2 className="h-5 w-5 shrink-0 animate-spin text-violet-400" />
+  const title =
+    state.status === "complete"
+      ? "Validate hoàn tất"
+      : state.status === "cancelled"
+        ? "Đã dừng validate"
+        : state.status === "error"
+          ? "Validate thất bại"
+          : runningTitle;
+
+  const panel = (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="validate-progress-title"
+    >
+      <Card className="relative z-[201] flex max-h-[min(90vh,720px)] w-full max-w-xl flex-col overflow-hidden border-violet-500/40 bg-card shadow-2xl shadow-violet-500/20">
+        <CardHeader className="shrink-0 border-b border-border pb-4">
+          <div className="flex items-start justify-between gap-3">
+            <CardTitle
+              id="validate-progress-title"
+              className="flex min-w-0 items-center gap-2 text-lg"
+            >
+              {state.status === "complete" ? (
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
+              ) : state.status === "error" || state.status === "cancelled" ? (
+                <Bot className="h-5 w-5 shrink-0 text-red-400" />
+              ) : (
+                <Loader2 className="h-5 w-5 shrink-0 animate-spin text-violet-400" />
+              )}
+              <span className="min-w-0 truncate">{title}</span>
+            </CardTitle>
+            {canClose && onClose && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="shrink-0"
+                onClick={onClose}
+                aria-label="Đóng"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             )}
-            <span className="min-w-0 truncate">
-              {state.status === "complete"
-                ? "Validate hoàn tất"
-                : state.status === "cancelled"
-                  ? "Đã dừng validate"
-                  : state.status === "error"
-                    ? "Validate thất bại"
-                    : "AI đang validate review..."}
-            </span>
-          </CardTitle>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-5">
+
+        <CardContent className="min-h-0 flex-1 space-y-4 overflow-y-auto p-6">
           <div>
             <div className="mb-2 flex items-center justify-between gap-2 text-sm">
               <span className="shrink-0 text-muted">Tiến độ</span>
-              <span className="font-mono font-medium text-violet-300">{state.percent}%</span>
+              <span className="font-mono font-medium text-violet-600 dark:text-violet-300">
+                {Math.max(0, Math.min(100, state.percent))}%
+              </span>
             </div>
             <div className="h-3 overflow-hidden rounded-full bg-surface-hover">
               <div
@@ -185,12 +232,18 @@ export function ValidateProgressPanel({
                       ? "bg-red-500"
                       : "bg-gradient-to-r from-violet-600 to-cyan-500",
                 )}
-                style={{ width: `${state.percent}%` }}
+                style={{
+                  width: `${Math.max(0, Math.min(100, state.percent))}%`,
+                }}
               />
             </div>
           </div>
 
-          <p className="break-words text-sm text-muted">{state.phaseMessage}</p>
+          {state.phaseMessage ? (
+            <p className="break-words text-sm text-foreground/90">{state.phaseMessage}</p>
+          ) : (
+            <p className="text-sm text-muted">Đang chuẩn bị...</p>
+          )}
 
           {state.total > 0 && (
             <p className="text-xs text-muted-soft">
@@ -206,7 +259,7 @@ export function ValidateProgressPanel({
             )}
 
           {state.currentComment && state.status === "running" && (
-            <div className="animate-pulse rounded-xl border border-violet-500/30 bg-violet-500/5 p-4">
+            <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-4">
               <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
                 <Badge variant="violet">
                   <Bot className="mr-1 h-3 w-3" />
@@ -220,12 +273,16 @@ export function ValidateProgressPanel({
                     <FileCode2 className="h-3 w-3 shrink-0" />
                     <span className="truncate">
                       {state.currentComment.filePath}
-                      {state.currentComment.line ? `:${state.currentComment.line}` : ""}
+                      {state.currentComment.line
+                        ? `:${state.currentComment.line}`
+                        : ""}
                     </span>
                   </span>
                 )}
               </div>
-              <p className="truncate text-xs text-muted">{state.currentComment.author}</p>
+              <p className="truncate text-xs text-muted">
+                {state.currentComment.author}
+              </p>
               <p className="mt-2 line-clamp-3 break-words text-sm text-foreground">
                 {state.currentComment.preview}
               </p>
@@ -235,16 +292,18 @@ export function ValidateProgressPanel({
           {state.doneItems.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-soft">
-                Đã xử lý
+                Đã xử lý gần đây
               </p>
-              <div className="max-h-36 space-y-1.5 overflow-y-auto">
+              <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1">
                 {state.doneItems.map((item, idx) => (
                   <div
-                    key={idx}
+                    key={`${item.message}-${idx}`}
                     className="flex items-start gap-2 rounded-lg bg-surface px-3 py-2 text-xs text-muted"
                   >
                     <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                    <span className="min-w-0 break-words line-clamp-2">{item.message}</span>
+                    <span className="min-w-0 break-words line-clamp-2">
+                      {item.message}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -252,11 +311,13 @@ export function ValidateProgressPanel({
           )}
 
           {state.error && (
-            <p className="break-words rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            <p className="break-words rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300">
               {state.error}
             </p>
           )}
+        </CardContent>
 
+        <div className="shrink-0 border-t border-border p-4">
           <div className="flex flex-col gap-2 sm:flex-row">
             {state.status === "running" && onStop && (
               <Button
@@ -275,10 +336,12 @@ export function ValidateProgressPanel({
               </Button>
             )}
           </div>
-        </CardContent>
+        </div>
       </Card>
     </div>
   );
+
+  return createPortal(panel, document.body);
 }
 
 export class ValidateAbortedError extends Error {
@@ -326,7 +389,6 @@ export async function streamValidate(
         percent: outcome.percent,
         message: `Đang mở batch tiếp theo trên Vercel (${continueCount}) — ${outcome.remaining} comment còn lại...`,
       });
-      // Nhỏ delay tránh rate-limit / cold start storm
       await new Promise((r) => setTimeout(r, 400));
       continue;
     }
@@ -431,7 +493,12 @@ async function streamValidateOnce(
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        const event = JSON.parse(line) as ValidateProgressEvent;
+        let event: ValidateProgressEvent;
+        try {
+          event = JSON.parse(line) as ValidateProgressEvent;
+        } catch {
+          continue;
+        }
         onEvent(event);
         if (event.type === "complete") {
           sessionId = event.sessionId;

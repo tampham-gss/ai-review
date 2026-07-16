@@ -13,6 +13,8 @@ const schema = z.object({
   pushAllInvalid: z.boolean().optional(),
   /** Push mọi VALID đã có suggestedReply và chưa push */
   pushAllFixedValid: z.boolean().optional(),
+  /** true = đẩy cả comment đã push trước đó (push lại) */
+  includeAlreadyPushed: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
@@ -39,6 +41,7 @@ export async function POST(request: Request) {
     }
 
     const token = decrypt(connection.tokenEncrypted);
+    const includePushed = body.includeAlreadyPushed === true;
 
     let targets = session.commentResults.filter((c) =>
       body.commentIds?.includes(c.id),
@@ -46,14 +49,15 @@ export async function POST(request: Request) {
 
     if (body.pushAllInvalid) {
       targets = session.commentResults.filter(
-        (c) => c.verdict === "INVALID" && !c.pushedToGitlab,
+        (c) =>
+          c.verdict === "INVALID" && (includePushed || !c.pushedToGitlab),
       );
     } else if (body.pushAllFixedValid) {
       targets = session.commentResults.filter(
         (c) =>
           c.verdict === "VALID" &&
           !!c.suggestedReply?.trim() &&
-          !c.pushedToGitlab,
+          (includePushed || !c.pushedToGitlab),
       );
     }
 

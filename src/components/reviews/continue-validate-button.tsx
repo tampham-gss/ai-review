@@ -40,6 +40,7 @@ export function ContinueValidateButton({
 }: ContinueValidateButtonProps) {
   const router = useRouter();
   const abortRef = useRef<AbortController | null>(null);
+  const stopSafetyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [running, setRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
@@ -47,14 +48,49 @@ export function ContinueValidateButton({
 
   if (!canContinueValidate(status)) return null;
 
+  function clearStopSafety() {
+    if (stopSafetyRef.current) {
+      clearTimeout(stopSafetyRef.current);
+      stopSafetyRef.current = null;
+    }
+  }
+
+  function handleStop() {
+    setStopping(true);
+    setProgress((prev) => ({
+      ...prev,
+      phaseMessage: "Đang dừng validate — hủy request...",
+    }));
+    abortRef.current?.abort();
+
+    clearStopSafety();
+    stopSafetyRef.current = setTimeout(() => {
+      setStopping(false);
+      setRunning(false);
+      setProgress((prev) => {
+        if (prev.status !== "running") return prev;
+        return {
+          ...prev,
+          status: "cancelled",
+          phaseMessage: "Đã dừng validate.",
+          currentComment: null,
+        };
+      });
+      toast.info("Đã dừng tiếp tục validate");
+      abortRef.current = null;
+    }, 6_000);
+  }
+
   async function startContinue(e?: React.MouseEvent) {
     if (stopPropagation) {
       e?.preventDefault();
       e?.stopPropagation();
     }
+    if (running) return;
 
     const controller = new AbortController();
     abortRef.current = controller;
+    clearStopSafety();
     setRunning(true);
     setStopping(false);
     setShowProgress(true);
@@ -70,11 +106,22 @@ export function ContinueValidateButton({
         (event) => setProgress((prev) => applyProgressEvent(prev, event)),
         controller.signal,
       );
+
+      setProgress((prev) => ({
+        ...prev,
+        status: "complete",
+        percent: 100,
+        phaseMessage: prev.phaseMessage || "Hoàn tất tiếp tục validate.",
+        currentComment: null,
+        sessionId: id ?? sessionId,
+      }));
       toast.success("Đã tiếp tục validate xong");
+
       if (onCompleted) {
-        onCompleted(id ?? sessionId);
+        await onCompleted(id ?? sessionId);
       } else {
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 600));
+        setShowProgress(false);
         router.push(`/reviews/${id ?? sessionId}`);
         router.refresh();
       }
@@ -88,7 +135,8 @@ export function ContinueValidateButton({
         }));
         toast.info("Đã dừng tiếp tục validate");
       } else {
-        const message = err instanceof Error ? err.message : "Tiếp tục validate thất bại";
+        const message =
+          err instanceof Error ? err.message : "Tiếp tục validate thất bại";
         setProgress((prev) => ({
           ...prev,
           status: "error",
@@ -99,6 +147,7 @@ export function ContinueValidateButton({
         toast.error(message);
       }
     } finally {
+      clearStopSafety();
       setRunning(false);
       setStopping(false);
       abortRef.current = null;
@@ -110,11 +159,12 @@ export function ContinueValidateButton({
       <ValidateProgressPanel
         state={progress}
         visible={showProgress}
-        onClose={() => setShowProgress(false)}
-        onStop={() => {
-          setStopping(true);
-          abortRef.current?.abort();
+        runningTitle="Đang tiếp tục validate..."
+        onClose={() => {
+          if (running) return;
+          setShowProgress(false);
         }}
+        onStop={handleStop}
         stopping={stopping}
       />
       <Button
@@ -124,6 +174,7 @@ export function ContinueValidateButton({
         className={className}
         onClick={(e) => void startContinue(e)}
         loading={running}
+        disabled={running}
       >
         {!running && <Play className="h-3.5 w-3.5 fill-current" />}
         {running ? "Đang tiếp tục..." : "Tiếp tục validate"}
