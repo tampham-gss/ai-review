@@ -433,8 +433,10 @@ async function continueValidateJob(
     });
     return session.id;
   }
-  if (session.status === "cancelled" || session.status === "failed") {
-    throw new Error(`Phiên validate đã ${session.status}, không thể tiếp tục.`);
+
+  // Cho phép tiếp tục từ validating / cancelled / failed (timeout Vercel, dừng tay, lỗi tạm)
+  if (!["validating", "cancelled", "failed", "pending"].includes(session.status)) {
+    throw new Error(`Không thể tiếp tục phiên có status "${session.status}".`);
   }
 
   await prisma.reviewSession.update({

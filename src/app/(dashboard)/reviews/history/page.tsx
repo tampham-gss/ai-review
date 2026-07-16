@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toaster";
+import { ContinueValidateButton } from "@/components/reviews/continue-validate-button";
 import { ArrowLeft, History, RefreshCw } from "lucide-react";
 
 interface ReviewSessionItem {
@@ -116,7 +117,9 @@ export default function ReviewHistoryPage() {
       <Card>
         <CardHeader>
           <CardTitle>Tất cả phiên</CardTitle>
-          <CardDescription>Cuộn trong danh sách để xem thêm mà không kéo dài trang.</CardDescription>
+          <CardDescription>
+            Phiên Đang chạy / Đã dừng / Lỗi có thể nhấn Tiếp tục validate để chạy phần comment còn lại.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {sessions.length === 0 ? (
@@ -124,12 +127,11 @@ export default function ReviewHistoryPage() {
           ) : (
             <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
               {sessions.map((s) => (
-                <Link
+                <div
                   key={s.id}
-                  href={`/reviews/${s.id}`}
                   className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 transition hover:bg-surface-hover sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="min-w-0 flex-1 space-y-1">
+                  <Link href={`/reviews/${s.id}`} className="min-w-0 flex-1 space-y-1">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <p className="truncate font-medium text-foreground">
                         {s.projectPath} !{s.mrIid}
@@ -144,14 +146,30 @@ export default function ReviewHistoryPage() {
                     </p>
                     <p className="truncate text-xs text-muted-soft">
                       Người chạy: {s.user.name || s.user.email}
+                      {s.commentCount > 0 &&
+                        ` · Đã có ${s.commentCount} comment trong lịch sử`}
                     </p>
+                  </Link>
+                  <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="valid">{s.validCount} valid</Badge>
+                      <Badge variant="invalid">{s.invalidCount} invalid</Badge>
+                      <Badge>{s.commentCount} comments</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <ContinueValidateButton
+                        sessionId={s.id}
+                        status={s.status}
+                        stopPropagation
+                      />
+                      <Link href={`/reviews/${s.id}`}>
+                        <Button size="sm" variant="secondary">
+                          Chi tiết
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <Badge variant="valid">{s.validCount} valid</Badge>
-                    <Badge variant="invalid">{s.invalidCount} invalid</Badge>
-                    <Badge>{s.commentCount} comments</Badge>
-                  </div>
-                </Link>
+                </div>
               ))}
             </div>
           )}

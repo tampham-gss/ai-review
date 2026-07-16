@@ -11,6 +11,8 @@ const schema = z.object({
   sessionId: z.string(),
   commentIds: z.array(z.string()).optional(),
   pushAllInvalid: z.boolean().optional(),
+  /** Push mọi VALID đã có suggestedReply và chưa push */
+  pushAllFixedValid: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
@@ -38,11 +40,22 @@ export async function POST(request: Request) {
 
     const token = decrypt(connection.tokenEncrypted);
 
-    const targets = body.pushAllInvalid
-      ? session.commentResults.filter(
-          (c) => c.verdict === "INVALID" && !c.pushedToGitlab,
-        )
-      : session.commentResults.filter((c) => body.commentIds?.includes(c.id));
+    let targets = session.commentResults.filter((c) =>
+      body.commentIds?.includes(c.id),
+    );
+
+    if (body.pushAllInvalid) {
+      targets = session.commentResults.filter(
+        (c) => c.verdict === "INVALID" && !c.pushedToGitlab,
+      );
+    } else if (body.pushAllFixedValid) {
+      targets = session.commentResults.filter(
+        (c) =>
+          c.verdict === "VALID" &&
+          !!c.suggestedReply?.trim() &&
+          !c.pushedToGitlab,
+      );
+    }
 
     if (targets.length === 0) {
       return NextResponse.json({ error: "Không có comment để push" }, { status: 400 });

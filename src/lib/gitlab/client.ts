@@ -64,6 +64,62 @@ export async function listMergeRequests(
   }));
 }
 
+/**
+ * MR opened mới nhất do chính PAT/user GitLab đang đăng nhập tạo.
+ */
+export async function findLatestAuthoredMergeRequest(
+  host: string,
+  token: string,
+) {
+  const api = createGitlabClient(host, token);
+  const user = await api.Users.showCurrentUser();
+
+  const mrs = await api.MergeRequests.all({
+    state: "opened",
+    scope: "created_by_me",
+    authorId: user.id,
+    orderBy: "updated_at",
+    sort: "desc",
+    perPage: 10,
+  });
+
+  const latest = mrs[0];
+  if (!latest) {
+    return null;
+  }
+
+  const projectId = String(latest.project_id);
+  let pathWithNamespace =
+    (latest as { references?: { full?: string } }).references?.full?.split(
+      "!",
+    )[0] ?? "";
+
+  let projectName = "";
+  try {
+    const project = await api.Projects.show(projectId);
+    pathWithNamespace =
+      (project as { path_with_namespace?: string }).path_with_namespace ??
+      pathWithNamespace;
+    projectName = (project as { name?: string }).name ?? "";
+  } catch {
+    // giữ path parse từ references nếu có
+  }
+
+  return {
+    username: user.username,
+    name: user.name,
+    projectId,
+    projectName,
+    pathWithNamespace: pathWithNamespace.replace(/!$/, "").trim(),
+    iid: latest.iid,
+    title: latest.title,
+    sourceBranch: latest.source_branch,
+    targetBranch: latest.target_branch,
+    webUrl: latest.web_url,
+    updatedAt: latest.updated_at,
+  };
+}
+
 export async function listBranches(host: string, token: string, projectId: string) {
   const api = createGitlabClient(host, token);
   const branches = await api.Branches.all(projectId, { perPage: 100 });

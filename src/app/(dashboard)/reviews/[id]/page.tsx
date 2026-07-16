@@ -6,9 +6,15 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { CommentSkeleton } from "@/components/ui/skeleton";
 import { MarkdownPreview } from "@/components/ui/markdown-preview";
 import { toast } from "@/components/ui/toaster";
+import { ContinueValidateButton } from "@/components/reviews/continue-validate-button";
+import {
+  buildBatchValidFixPrompt,
+  buildValidFixPrompt,
+} from "@/lib/reviews/fix-prompt";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -17,6 +23,7 @@ import {
   Clock,
   Copy,
   Download,
+  FileCode2,
   History,
   MessageSquare,
   User,
@@ -101,6 +108,9 @@ export default function ReviewSessionPage() {
     "all" | "VALID" | "INVALID" | "PARTIAL" | "other"
   >("all");
   const [copiedKey, setCopiedKey] = useState("");
+  const [pasteByComment, setPasteByComment] = useState<Record<string, string>>({});
+  const [batchPaste, setBatchPaste] = useState("");
+  const [showPromptId, setShowPromptId] = useState<string | null>(null);
 
   const loadSession = useCallback(async () => {
     try {
@@ -255,6 +265,90 @@ export default function ReviewSessionPage() {
     }
   }
 
+  async function pushAllFixedValid() {
+    setActionLoading("push-fixed-valid");
+    try {
+      const res = await fetch("/api/reviews/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: params.id, pushAllFixedValid: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Push reply đã fix thất bại");
+        return;
+      }
+      toast.success(`Đã push ${data.pushedCount ?? 0} reply đã fix lên GitLab`);
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi push reply đã fix");
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function saveFixReply(commentId: string) {
+    const pasted = pasteByComment[commentId]?.trim();
+    if (!pasted) {
+      toast.error("Hãy paste reply từ Cursor/Copilot vào ô bên dưới");
+      return;
+    }
+    setActionLoading(`save-reply-${commentId}`);
+    try {
+      const res = await fetch("/api/reviews/save-fix-reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: params.id,
+          commentId,
+          reply: pasted,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Lưu reply thất bại");
+        return;
+      }
+      toast.success("Đã lưu reply từ prompt fix");
+      setPasteByComment((prev) => ({ ...prev, [commentId]: "" }));
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi lưu reply");
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function saveBatchFixReplies() {
+    if (!batchPaste.trim()) {
+      toast.error("Paste toàn bộ output Cursor (có Comment ID) vào ô batch");
+      return;
+    }
+    setActionLoading("save-batch-reply");
+    try {
+      const res = await fetch("/api/reviews/save-fix-reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: params.id,
+          pastedText: batchPaste,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Lưu batch reply thất bại");
+        return;
+      }
+      toast.success(`Đã lưu ${data.savedCount ?? 0} reply từ Cursor`);
+      setBatchPaste("");
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi lưu batch reply");
+    } finally {
+      setActionLoading("");
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -269,11 +363,15 @@ export default function ReviewSessionPage() {
     return <p className="text-red-400">Không tìm thấy phiên review.</p>;
   }
 
-  const validCount = session.commentResults.filter((c) => c.verdict === "VALID").length;
+  const validComments = session.commentResults.filter((c) => c.verdict === "VALID");
+  const validCount = validComments.length;
   const invalidCount = session.commentResults.filter((c) => c.verdict === "INVALID").length;
   const partialCount = session.commentResults.filter((c) => c.verdict === "PARTIAL").length;
   const otherCount = session.commentResults.filter(
     (c) => c.verdict !== "VALID" && c.verdict !== "INVALID" && c.verdict !== "PARTIAL",
+  ).length;
+  const fixedValidReady = validComments.filter(
+    (c) => !!c.suggestedReply?.trim() && !c.pushedToGitlab,
   ).length;
 
   const filteredComments = session.commentResults.filter((c) => {
@@ -283,6 +381,15 @@ export default function ReviewSessionPage() {
     }
     return c.verdict === verdictFilter;
   });
+
+  function fixPromptFor(comment: CommentResult) {
+    return buildValidFixPrompt({
+      projectPath: session!.projectPath,
+      mrIid: session!.mrIid,
+      sourceBranch: session!.sourceBranch,
+      comment,
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -309,6 +416,8 @@ export default function ReviewSessionPage() {
             </h1>
             <p className="truncate text-sm text-muted">
               {session.sourceBranch} · {session.status}
+              {session.commentResults.length > 0 &&
+                ` · ${session.commentResults.length} comment đã có trong lịch sử`}
             </p>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-soft">
               <span className="inline-flex min-w-0 items-center gap-1">
@@ -393,6 +502,36 @@ export default function ReviewSessionPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <ContinueValidateButton
+            sessionId={session.id}
+            status={session.status}
+            onCompleted={async () => {
+              await loadSession();
+              toast.success("Đã cập nhật kết quả validate mới vào phiên này");
+            }}
+          />
+          {validCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const text = buildBatchValidFixPrompt({
+                  projectPath: session.projectPath,
+                  mrIid: session.mrIid,
+                  sourceBranch: session.sourceBranch,
+                  comments: validComments,
+                });
+                void copyText("batch-fix-prompt", text);
+              }}
+            >
+              {copiedKey === "batch-fix-prompt" ? (
+                <Check className="h-4 w-4 text-emerald-400" />
+              ) : (
+                <FileCode2 className="h-4 w-4" />
+              )}
+              Copy prompt fix tất cả VALID
+            </Button>
+          )}
           {validCount > 0 && (
             <Button
               variant="success"
@@ -402,6 +541,21 @@ export default function ReviewSessionPage() {
             >
               {actionLoading !== "fix-all" && <Wrench className="h-4 w-4" />}
               {actionLoading === "fix-all" ? "Đang fix..." : "AI fix tất cả VALID"}
+            </Button>
+          )}
+          {fixedValidReady > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={pushAllFixedValid}
+              loading={actionLoading === "push-fixed-valid"}
+            >
+              {actionLoading !== "push-fixed-valid" && (
+                <MessageSquare className="h-4 w-4" />
+              )}
+              {actionLoading === "push-fixed-valid"
+                ? "Đang push..."
+                : `Push các comment đã fix (${fixedValidReady})`}
             </Button>
           )}
           {invalidCount > 0 && (
@@ -445,6 +599,45 @@ export default function ReviewSessionPage() {
         </Badge>
       </div>
 
+      {validCount > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Prompt fix (Cursor / Copilot / VS Code)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted">
+            <ol className="list-decimal space-y-1 pl-5">
+              <li>
+                Copy prompt fix (từng comment hoặc tất cả VALID) → dán vào chat Cursor/Copilot.
+              </li>
+              <li>AI sửa code trong workspace theo file/dòng + comment GitLab.</li>
+              <li>
+                Copy khối Markdown reply mà AI trả ra (có Comment ID) → paste vào ô bên dưới →{" "}
+                <strong className="text-foreground">Đồng ý &amp; lưu reply</strong>.
+              </li>
+              <li>
+                Nhấn <strong className="text-foreground">Push các comment đã fix</strong> (hoặc
+                push từng cái).
+              </li>
+            </ol>
+            <Textarea
+              placeholder="Paste batch output từ Cursor (nhiều khối ## Đánh giá + Comment ID)..."
+              value={batchPaste}
+              onChange={(e) => setBatchPaste(e.target.value)}
+              className="min-h-[100px] font-mono text-xs"
+            />
+            <Button
+              size="sm"
+              variant="success"
+              onClick={saveBatchFixReplies}
+              loading={actionLoading === "save-batch-reply"}
+              disabled={!batchPaste.trim()}
+            >
+              Đồng ý &amp; lưu reply (batch)
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="space-y-4">
         <p className="text-sm text-muted">
           Đang hiện {filteredComments.length}/{session.commentResults.length} comment
@@ -463,7 +656,13 @@ export default function ReviewSessionPage() {
           )}
         </p>
         {session.commentResults.length === 0 ? (
-          <p className="text-sm text-muted">Không có comment unresolved trong phiên này.</p>
+          <p className="text-sm text-muted">
+            {session.status === "validating" ||
+            session.status === "cancelled" ||
+            session.status === "failed"
+              ? "Chưa có comment nào trong lịch sử — nhấn Tiếp tục validate để chạy tiếp."
+              : "Không có comment unresolved trong phiên này."}
+          </p>
         ) : filteredComments.length === 0 ? (
           <p className="text-sm text-muted">
             Không có comment nào khớp bộ lọc hiện tại.
@@ -476,147 +675,228 @@ export default function ReviewSessionPage() {
                 : null;
             const pathCopied = copiedKey === `path-${comment.id}`;
             const replyCopied = copiedKey === `reply-${comment.id}`;
+            const promptCopied = copiedKey === `fix-prompt-${comment.id}`;
+            const promptOpen = showPromptId === comment.id;
+            const promptText =
+              comment.verdict === "VALID" ? fixPromptFor(comment) : "";
 
             return (
-          <Card key={comment.id}>
-            <CardHeader className="pb-3">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                {verdictBadge(comment.verdict)}
-                {comment.severity && <Badge variant="high">{comment.severity}</Badge>}
-                {fileRef && (
-                  <div className="flex min-w-0 max-w-full items-center gap-1">
-                    <span
-                      className="min-w-0 truncate font-mono text-xs text-cyan-700 dark:text-cyan-300"
-                      title={fileRef}
-                    >
-                      {fileRef}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 shrink-0 px-2"
-                      title="Copy đường dẫn source"
-                      onClick={() => copyText(`path-${comment.id}`, fileRef)}
-                    >
-                      {pathCopied ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
+              <Card key={comment.id}>
+                <CardHeader className="pb-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    {verdictBadge(comment.verdict)}
+                    {comment.severity && <Badge variant="high">{comment.severity}</Badge>}
+                    {fileRef && (
+                      <div className="flex min-w-0 max-w-full items-center gap-1">
+                        <span
+                          className="min-w-0 truncate font-mono text-xs text-cyan-700 dark:text-cyan-300"
+                          title={fileRef}
+                        >
+                          {fileRef}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 shrink-0 px-2"
+                          title="Copy đường dẫn source"
+                          onClick={() => copyText(`path-${comment.id}`, fileRef)}
+                        >
+                          {pathCopied ? (
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                    {comment.pushedToGitlab && <Badge variant="violet">Đã push</Badge>}
                   </div>
-                )}
-                {comment.pushedToGitlab && <Badge variant="violet">Đã push</Badge>}
-              </div>
-              <CardTitle className="truncate text-sm font-normal text-muted">
-                {comment.author}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="max-h-48 overflow-auto rounded-xl bg-black/30 p-3">
-                <MarkdownPreview
-                  content={
-                    comment.body.length > 2000
-                      ? `${comment.body.slice(0, 2000)}\n\n...`
-                      : comment.body
-                  }
-                  compact
-                />
-              </div>
+                  <CardTitle className="truncate text-sm font-normal text-muted">
+                    {comment.author}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="max-h-48 overflow-auto rounded-xl bg-black/30 p-3">
+                    <MarkdownPreview
+                      content={
+                        comment.body.length > 2000
+                          ? `${comment.body.slice(0, 2000)}\n\n...`
+                          : comment.body
+                      }
+                      compact
+                    />
+                  </div>
 
-              {comment.reasonShort && (
-                <div className="rounded-xl border border-border bg-surface p-4">
-                  <p className="break-words text-sm font-medium text-foreground">{comment.reasonShort}</p>
-                  {comment.reasonDetail && (
-                    <div className="mt-2">
-                      <MarkdownPreview content={comment.reasonDetail} />
+                  {comment.reasonShort && (
+                    <div className="rounded-xl border border-border bg-surface p-4">
+                      <p className="break-words text-sm font-medium text-foreground">
+                        {comment.reasonShort}
+                      </p>
+                      {comment.reasonDetail && (
+                        <div className="mt-2">
+                          <MarkdownPreview content={comment.reasonDetail} />
+                        </div>
+                      )}
+                      {comment.confidence != null && (
+                        <p className="mt-2 text-xs text-muted-soft">
+                          Confidence: {Math.round(comment.confidence * 100)}%
+                        </p>
+                      )}
                     </div>
                   )}
-                  {comment.confidence != null && (
-                    <p className="mt-2 text-xs text-muted-soft">
-                      Confidence: {Math.round(comment.confidence * 100)}%
-                    </p>
-                  )}
-                </div>
-              )}
 
-              {comment.suggestedReply && (
-                <div
-                  className={`rounded-xl border p-4 ${
-                    comment.verdict === "INVALID"
-                      ? "border-orange-500/20 bg-orange-500/5"
-                      : "border-violet-500/20 bg-violet-500/5"
-                  }`}
-                >
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <p
-                      className={`text-xs font-medium ${
-                        comment.verdict === "INVALID" ? "text-orange-300" : "text-violet-300"
+                  {comment.verdict === "VALID" && (
+                    <div className="space-y-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                          File prompt fix — dán vào Cursor / Copilot
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setShowPromptId(promptOpen ? null : comment.id)
+                            }
+                          >
+                            <FileCode2 className="h-3.5 w-3.5" />
+                            {promptOpen ? "Ẩn prompt" : "Xem prompt"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="success"
+                            size="sm"
+                            onClick={() =>
+                              copyText(`fix-prompt-${comment.id}`, promptText)
+                            }
+                          >
+                            {promptCopied ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                            {promptCopied ? "Đã copy" : "Copy prompt fix"}
+                          </Button>
+                        </div>
+                      </div>
+                      {promptOpen && (
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/40 p-3 font-mono text-[11px] text-foreground">
+                          {promptText}
+                        </pre>
+                      )}
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted">
+                          Sau khi Cursor fix xong, paste khối Markdown reply (kèm Comment ID)
+                          vào đây:
+                        </p>
+                        <Textarea
+                          placeholder={`## Đánh giá: **Review đúng — đã xử lý**\n...\nComment ID: \`${comment.id}\``}
+                          value={pasteByComment[comment.id] ?? ""}
+                          onChange={(e) =>
+                            setPasteByComment((prev) => ({
+                              ...prev,
+                              [comment.id]: e.target.value,
+                            }))
+                          }
+                          className="min-h-[90px] font-mono text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          variant="success"
+                          onClick={() => saveFixReply(comment.id)}
+                          loading={actionLoading === `save-reply-${comment.id}`}
+                          disabled={!pasteByComment[comment.id]?.trim()}
+                        >
+                          Đồng ý &amp; lưu reply
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {comment.suggestedReply && (
+                    <div
+                      className={`rounded-xl border p-4 ${
+                        comment.verdict === "INVALID"
+                          ? "border-orange-500/20 bg-orange-500/5"
+                          : "border-violet-500/20 bg-violet-500/5"
                       }`}
                     >
-                      {comment.verdict === "INVALID"
-                        ? "Reply phản bác — bảo vệ code hiện tại"
-                        : "Reply đề xuất"}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        copyText(`reply-${comment.id}`, comment.suggestedReply!)
-                      }
-                    >
-                      {replyCopied ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                      {replyCopied ? "Đã copy" : "Copy reply"}
-                    </Button>
-                  </div>
-                  <MarkdownPreview content={comment.suggestedReply} />
-                </div>
-              )}
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p
+                          className={`text-xs font-medium ${
+                            comment.verdict === "INVALID"
+                              ? "text-orange-300"
+                              : "text-violet-300"
+                          }`}
+                        >
+                          {comment.verdict === "INVALID"
+                            ? "Reply phản bác — bảo vệ code hiện tại"
+                            : "Reply đã fix / đề xuất"}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            copyText(`reply-${comment.id}`, comment.suggestedReply!)
+                          }
+                        >
+                          {replyCopied ? (
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                          {replyCopied ? "Đã copy" : "Copy reply"}
+                        </Button>
+                      </div>
+                      <MarkdownPreview content={comment.suggestedReply} />
+                    </div>
+                  )}
 
-              <div className="flex flex-wrap gap-2">
-                {comment.verdict === "VALID" && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="success"
-                      onClick={() => fixComment(comment.id)}
-                      loading={actionLoading === comment.id}
-                    >
-                      {actionLoading === comment.id ? "Đang fix..." : "AI fix comment này"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => pushValidReply(comment.id)}
-                      loading={actionLoading === `push-valid-${comment.id}`}
-                    >
-                      {actionLoading === `push-valid-${comment.id}`
-                        ? "Đang push..."
-                        : "Push reply đã fix"}
-                    </Button>
-                  </>
-                )}
-                {comment.verdict === "INVALID" && !comment.pushedToGitlab && (
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => pushComment(comment.id)}
-                    loading={actionLoading === `push-${comment.id}`}
-                  >
-                    {actionLoading === `push-${comment.id}`
-                      ? "Đang push..."
-                      : "Push lý do invalid"}
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="flex flex-wrap gap-2">
+                    {comment.verdict === "VALID" && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="success"
+                          onClick={() => fixComment(comment.id)}
+                          loading={actionLoading === comment.id}
+                        >
+                          {actionLoading === comment.id
+                            ? "Đang fix..."
+                            : "AI fix comment này"}
+                        </Button>
+                        {!!comment.suggestedReply?.trim() && !comment.pushedToGitlab && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => pushValidReply(comment.id)}
+                            loading={actionLoading === `push-valid-${comment.id}`}
+                          >
+                            {actionLoading === `push-valid-${comment.id}`
+                              ? "Đang push..."
+                              : "Push comment đã fix"}
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {comment.verdict === "INVALID" && !comment.pushedToGitlab && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => pushComment(comment.id)}
+                        loading={actionLoading === `push-${comment.id}`}
+                      >
+                        {actionLoading === `push-${comment.id}`
+                          ? "Đang push..."
+                          : "Push lý do invalid"}
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             );
           })
         )}

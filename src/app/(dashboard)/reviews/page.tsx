@@ -16,7 +16,7 @@ import {
   streamValidate,
 } from "@/components/reviews/validate-progress";
 import { AiProviderPicker } from "@/components/reviews/ai-provider-picker";
-import { AlertTriangle, History, Upload, Zap } from "lucide-react";
+import { AlertTriangle, GitPullRequest, History, Upload, Zap } from "lucide-react";
 
 interface Connection {
   id: string;
@@ -51,6 +51,7 @@ export default function NewReviewPage() {
   const [running, setRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingLatestMr, setLoadingLatestMr] = useState(false);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -111,6 +112,52 @@ export default function NewReviewPage() {
       toast.error("Lỗi kết nối khi tải projects");
     } finally {
       setLoadingProjects(false);
+    }
+  }
+
+  async function loadLatestMr() {
+    if (!connectionId) {
+      toast.error("Hãy chọn kết nối GitLab trước");
+      return;
+    }
+    setLoadingLatestMr(true);
+    try {
+      const res = await fetch(
+        `/api/gitlab/latest-mr?connectionId=${encodeURIComponent(connectionId)}`,
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Lấy MR cuối thất bại");
+        return;
+      }
+
+      const latest = data.latest as {
+        projectId: string;
+        pathWithNamespace: string;
+        iid: number;
+        title: string;
+        sourceBranch: string;
+        username?: string;
+      };
+
+      setProjects(data.projects ?? []);
+      setMrs(data.mergeRequests ?? []);
+      setProjectId(latest.projectId);
+      setProjectPath(latest.pathWithNamespace);
+      setMrIid(latest.iid);
+      setMrTitle(latest.title);
+      setSourceBranch(latest.sourceBranch);
+      setSourceType("gitlab");
+      setZipBase64(null);
+
+      toast.success(
+        `Đã chọn MR !${latest.iid} — ${latest.pathWithNamespace}` +
+          (latest.username ? ` (@${latest.username})` : ""),
+      );
+    } catch {
+      toast.error("Lỗi kết nối khi lấy MR cuối");
+    } finally {
+      setLoadingLatestMr(false);
     }
   }
 
@@ -308,9 +355,21 @@ export default function NewReviewPage() {
                 </option>
               ))}
             </select>
-            <Button variant="secondary" onClick={loadProjects} loading={loadingProjects}>
-              {loadingProjects ? "Đang tải..." : "Tải projects"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={loadProjects} loading={loadingProjects}>
+                {loadingProjects ? "Đang tải..." : "Tải projects"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={loadLatestMr}
+                loading={loadingLatestMr}
+                disabled={!connectionId}
+                title="Lấy MR opened mới nhất do tài khoản GitLab đang chọn tạo"
+              >
+                {!loadingLatestMr && <GitPullRequest className="h-4 w-4" />}
+                {loadingLatestMr ? "Đang tìm..." : "Lấy MR cuối"}
+              </Button>
+            </div>
             <select
               className="h-10 w-full truncate rounded-xl border border-border bg-surface px-3 text-sm text-foreground"
               value={projectId}
