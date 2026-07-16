@@ -747,9 +747,10 @@ export default function ReviewSessionPage() {
               </li>
               <li>AI sửa code trong workspace theo file/dòng + comment GitLab.</li>
               <li>
-                Copy khối Markdown reply (có Comment ID) → paste vào ô bên dưới → nhấn{" "}
+                Copy file reply batch (mỗi khối bắt đầu bằng dòng{" "}
+                <code className="text-xs">## #N — `commentId`</code>) → paste vào ô bên dưới → nhấn{" "}
                 <strong className="text-foreground">Đồng ý, lưu &amp; push</strong> — hệ thống
-                lưu reply và đẩy lên GitLab ngay.
+                tách từng Comment ID rồi lưu &amp; đẩy lên GitLab.
               </li>
             </ol>
             <Textarea
