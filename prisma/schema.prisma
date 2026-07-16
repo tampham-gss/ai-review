@@ -119,6 +119,8 @@ model CommentValidationResult {
   reasonShort        String?       @db.Text
   reasonDetail       String?       @db.Text
   suggestedReply     String?       @db.Text
+  /** true = suggestedReply là reply sau prompt-fix, được phép push GitLab (VALID). */
+  fixReplyReady      Boolean       @default(false)
   fixedFilesJson     String?       @db.Text
   isResolvedOnGitlab Boolean       @default(false)
   pushedToGitlab     Boolean       @default(false)

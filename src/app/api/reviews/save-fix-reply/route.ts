@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
 import { parseFixReplyBlocks } from "@/lib/reviews/fix-prompt";
+import { pushCommentsToGitlab } from "@/lib/reviews/push-comments";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -11,6 +12,8 @@ const schema = z.object({
   /** Lưu trực tiếp 1 reply cho 1 comment */
   commentId: z.string().optional(),
   reply: z.string().min(5).optional(),
+  /** Mặc định true: lưu xong push ngay lên GitLab */
+  pushAfterSave: z.boolean().optional().default(true),
 });
 
 export async function POST(request: Request) {
@@ -25,7 +28,6 @@ export async function POST(request: Request) {
       include: {
         commentResults: {
           where: { verdict: "VALID" },
-          select: { id: true, suggestedReply: true },
         },
       },
     });
@@ -54,14 +56,15 @@ export async function POST(request: Request) {
       }
 
       const unusedValid = session.commentResults.filter((c) =>
-        blocks.some((b) => !b.commentId) ? true : blocks.some((b) => b.commentId === c.id),
+        blocks.some((b) => !b.commentId)
+          ? true
+          : blocks.some((b) => b.commentId === c.id),
       );
 
       for (let i = 0; i < blocks.length; i++) {
         const block = blocks[i];
         let commentId = block.commentId;
         if (!commentId) {
-          // Ghép lần lượt theo thứ tự VALID nếu thiếu ID
           commentId = unusedValid[i]?.id;
         }
         if (!commentId) continue;
@@ -91,14 +94,41 @@ export async function POST(request: Request) {
         where: { id: u.id },
         data: {
           suggestedReply: u.reply,
+          fixReplyReady: true,
           pushedToGitlab: false,
         },
       });
     }
 
+    const savedIds = updates.map((u) => u.id);
+    let pushedIds: string[] = [];
+    let pushError: string | null = null;
+
+    if (body.pushAfterSave !== false) {
+      try {
+        const fresh = await prisma.commentValidationResult.findMany({
+          where: { id: { in: savedIds }, sessionId: session.id },
+        });
+        const result = await pushCommentsToGitlab({
+          userId: authResult.userId,
+          sessionId: session.id,
+          targets: fresh,
+        });
+        pushedIds = result.pushedIds;
+      } catch (error) {
+        pushError =
+          error instanceof Error
+            ? error.message
+            : "Đã lưu reply nhưng push GitLab thất bại";
+      }
+    }
+
     return NextResponse.json({
       savedCount: updates.length,
-      savedIds: updates.map((u) => u.id),
+      savedIds,
+      pushedCount: pushedIds.length,
+      pushedIds,
+      pushError,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

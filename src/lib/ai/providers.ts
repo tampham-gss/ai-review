@@ -682,9 +682,10 @@ Nhiệm vụ: đánh giá comment review có hợp lý với SOURCE CODE / MR DI
 - PARTIAL: Một phần đúng, một phần sai.
 - NEEDS_CONTEXT: CHỈ dùng khi không có diff/source để phân tích. KHÔNG dùng khi đã có code.
 
-## QUY TẮC suggestedReply (tiếng Việt, Markdown trực quan — đăng thẳng GitLab)
+## QUY TẮC suggestedReply
 
-suggestedReply PHẢI là Markdown có cấu trúc rõ ràng, dễ đọc trên GitLab. KHÔNG viết đoạn văn liền một khối.
+- INVALID / PARTIAL: suggestedReply là comment Markdown sẽ PUSH lên GitLab (tiếng Việt, cấu trúc rõ).
+- VALID: suggestedReply là ĐỀ XUẤT CHỈNH SỬA nội bộ (không phải comment sẽ push). Reply push GitLab chỉ tạo sau khi user fix code bằng prompt Cursor và paste reply đã xử lý.
 
 ### CẤM TUYỆT ĐỐI trong suggestedReply:
 - "Cảm ơn bạn đã review / yêu cầu review"
@@ -694,7 +695,7 @@ suggestedReply PHẢI là Markdown có cấu trúc rõ ràng, dễ đọc trên 
 - Đề xuất sửa code khi verdict = INVALID
 - Prefix bot / "AI Review Audit"
 
-### Template BẮT BUỘC (INVALID — phản bác review):
+### Template BẮT BUỘC (INVALID — phản bác review, sẽ push GitLab):
 
 ## Đánh giá: **Review không đúng — <tóm tắt ngắn quyết định>**
 
@@ -715,24 +716,24 @@ suggestedReply PHẢI là Markdown có cấu trúc rõ ràng, dễ đọc trên 
 
 <1–2 câu kết luận kiên quyết, nêu rõ giữ nguyên hay chỉ chỉnh phần nào>
 
-### Template BẮT BUỘC (VALID — đồng ý review):
+### Template BẮT BUỘC (VALID — đề xuất chỉnh sửa nội bộ, KHÔNG phải comment push):
 
-## Đánh giá: **Review đúng — <vấn đề cụ thể sẽ xử lý>**
+## Đề xuất chỉnh sửa: **<vấn đề cụ thể>**
 
 | Vị trí | Vấn đề |
 |--------|--------|
 | \`path:line\` | mô tả ngắn |
 
-### Hướng xử lý
+### Hướng xử lý dự kiến
 
 - Bước / thay đổi dự kiến 1
 - Bước 2 (nếu có)
 
-### Kết luận
+### Ghi chú
 
-Sẽ chỉnh theo review tại vị trí nêu trên.
+Đây là đề xuất chỉnh trong workspace — chưa phải reply đăng GitLab.
 
-### Template BẮT BUỘC (PARTIAL):
+### Template BẮT BUỘC (PARTIAL — có thể push GitLab):
 
 ## Đánh giá: **Review đúng một phần**
 
@@ -755,7 +756,7 @@ Yêu cầu thêm:
   "confidence": 0.0-1.0,
   "reasonShort": "tóm tắt ngắn (UI nội bộ)",
   "reasonDetail": "phân tích chi tiết có trích code (UI nội bộ)",
-  "suggestedReply": "Markdown trực quan theo template trên — không prefix bot",
+  "suggestedReply": "Markdown theo template trên — không prefix bot",
   "citedConventions": ["tên convention"]
 }`;
 
@@ -807,10 +808,11 @@ ${params.fileContent}
 
 ## Lưu ý BẮT BUỘC
 1. Ưu tiên phân tích theo MR DIFF / code change. Source quanh line dùng để kiểm chứng usage thực tế.
-2. suggestedReply PHẢI là Markdown trực quan theo template (## Đánh giá, bảng, ### Vì sao, ### Kết luận).
-3. INVALID → bảo vệ code hiện tại, KHÔNG đề xuất sửa theo reviewer.
-4. Cấm câu sáo rỗng: "cảm ơn", "cung cấp thêm thông tin", "để đánh giá chính xác".
-5. Không prefix bot trong suggestedReply.
+2. INVALID/PARTIAL: suggestedReply là Markdown sẽ push GitLab (## Đánh giá, bảng, ### Vì sao, ### Kết luận).
+3. VALID: suggestedReply là đề xuất chỉnh sửa nội bộ (## Đề xuất chỉnh sửa) — KHÔNG phải comment push.
+4. INVALID → bảo vệ code hiện tại, KHÔNG đề xuất sửa theo reviewer.
+5. Cấm câu sáo rỗng: "cảm ơn", "cung cấp thêm thông tin", "để đánh giá chính xác".
+6. Không prefix bot trong suggestedReply.
 `;
 
   const { text, tokens } = await callAi(provider, VALIDATION_SYSTEM, userPrompt, {

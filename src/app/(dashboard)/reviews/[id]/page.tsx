@@ -24,14 +24,13 @@ import {
   ArrowLeft,
   Bot,
   Check,
+  CheckCircle2,
   Clock,
   Copy,
-  Download,
   FileCode2,
   History,
   MessageSquare,
   User,
-  Wrench,
 } from "lucide-react";
 
 interface CommentResult {
@@ -46,6 +45,8 @@ interface CommentResult {
   reasonShort: string | null;
   reasonDetail: string | null;
   suggestedReply: string | null;
+  /** Reply từ prompt-fix — mới được phép push GitLab (VALID). */
+  fixReplyReady: boolean;
   pushedToGitlab: boolean;
 }
 
@@ -74,7 +75,6 @@ interface Session {
     email: string;
   } | null;
   zipWarning: boolean;
-  hasFixedSource: boolean;
   commentResults: CommentResult[];
 }
 
@@ -107,7 +107,6 @@ export default function ReviewSessionPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
-  const [providerId, setProviderId] = useState<string | null>(null);
   const [verdictFilter, setVerdictFilter] = useState<
     "all" | "VALID" | "INVALID" | "PARTIAL" | "other"
   >("all");
@@ -115,7 +114,7 @@ export default function ReviewSessionPage() {
   const [pasteByComment, setPasteByComment] = useState<Record<string, string>>({});
   const [batchPaste, setBatchPaste] = useState("");
   const [showPromptId, setShowPromptId] = useState<string | null>(null);
-  const [pushModal, setPushModal] = useState<null | "invalid" | "fixed-valid">(null);
+  const [pushModal, setPushModal] = useState<null | "invalid">(null);
 
   const loadSession = useCallback(async () => {
     try {
@@ -127,7 +126,6 @@ export default function ReviewSessionPage() {
         return;
       }
       setSession(data.session);
-      setProviderId(data.session?.aiProviderId ?? data.session?.aiProvider?.id ?? null);
     } catch {
       toast.error("Lỗi kết nối khi tải phiên review");
     } finally {
@@ -151,58 +149,6 @@ export default function ReviewSessionPage() {
   useEffect(() => {
     loadSession();
   }, [loadSession]);
-
-  async function fixComment(commentId: string) {
-    setActionLoading(commentId);
-    try {
-      const res = await fetch("/api/reviews/fix", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: params.id,
-          commentIds: [commentId],
-          providerId: providerId ?? undefined,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(typeof data.error === "string" ? data.error : "AI fix thất bại");
-        return;
-      }
-      toast.success("Đã AI fix comment");
-      await loadSession();
-    } catch {
-      toast.error("Lỗi kết nối khi AI fix");
-    } finally {
-      setActionLoading("");
-    }
-  }
-
-  async function fixAllValid() {
-    setActionLoading("fix-all");
-    try {
-      const res = await fetch("/api/reviews/fix", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: params.id,
-          fixAllValid: true,
-          providerId: providerId ?? undefined,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(typeof data.error === "string" ? data.error : "AI fix tất cả thất bại");
-        return;
-      }
-      toast.success("Đã AI fix tất cả comment VALID");
-      await loadSession();
-    } catch {
-      toast.error("Lỗi kết nối khi AI fix tất cả");
-    } finally {
-      setActionLoading("");
-    }
-  }
 
   async function pushComment(commentId: string) {
     setActionLoading(`push-${commentId}`);
@@ -273,84 +219,8 @@ export default function ReviewSessionPage() {
     }
   }
 
-  async function pushValidReply(commentId: string) {
-    setActionLoading(`push-valid-${commentId}`);
-    try {
-      const res = await fetch("/api/reviews/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: params.id, commentIds: [commentId] }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(typeof data.error === "string" ? data.error : "Push reply thất bại");
-        return;
-      }
-      toast.success("Đã push reply đã fix");
-      await loadSession();
-    } catch {
-      toast.error("Lỗi kết nối khi push reply");
-    } finally {
-      setActionLoading("");
-    }
-  }
-
-  async function pushAllFixedValid() {
-    if (!session) return;
-    const withReply = session.commentResults.filter(
-      (c) => c.verdict === "VALID" && !!c.suggestedReply?.trim(),
-    );
-    const unpushed = withReply.filter((c) => !c.pushedToGitlab).length;
-    const pushed = withReply.filter((c) => c.pushedToGitlab).length;
-
-    if (pushed > 0 && unpushed > 0) {
-      setPushModal("fixed-valid");
-      return;
-    }
-
-    await executePushFixedValid(pushed > 0 && unpushed === 0);
-  }
-
-  async function executePushFixedValid(includeAlreadyPushed: boolean) {
-    setActionLoading("push-fixed-valid");
-    try {
-      const res = await fetch("/api/reviews/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: params.id,
-          pushAllFixedValid: true,
-          includeAlreadyPushed,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(typeof data.error === "string" ? data.error : "Push reply đã fix thất bại");
-        return;
-      }
-      toast.success(
-        includeAlreadyPushed
-          ? `Đã push lại ${data.pushedCount ?? 0} reply đã fix`
-          : `Đã push ${data.pushedCount ?? 0} reply đã fix chưa đẩy`,
-      );
-      setPushModal(null);
-      await loadSession();
-    } catch {
-      toast.error("Lỗi kết nối khi push reply đã fix");
-    } finally {
-      setActionLoading("");
-    }
-  }
-
   function handlePushModalConfirm(choice: PushScopeChoice) {
-    const includePushed = choice === "include_pushed";
-    if (pushModal === "invalid") {
-      void executePushInvalid(includePushed);
-      return;
-    }
-    if (pushModal === "fixed-valid") {
-      void executePushFixedValid(includePushed);
-    }
+    void executePushInvalid(choice === "include_pushed");
   }
 
   async function saveFixReply(commentId: string) {
@@ -368,18 +238,27 @@ export default function ReviewSessionPage() {
           sessionId: params.id,
           commentId,
           reply: pasted,
+          pushAfterSave: true,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(typeof data.error === "string" ? data.error : "Lưu reply thất bại");
+        toast.error(
+          typeof data.error === "string" ? data.error : "Lưu & push reply thất bại",
+        );
         return;
       }
-      toast.success("Đã lưu reply từ prompt fix");
+      if (typeof data.pushError === "string" && data.pushError) {
+        toast.error(`Đã lưu reply nhưng push lỗi: ${data.pushError}`);
+      } else {
+        toast.success(
+          `Đã lưu & push ${data.pushedCount ?? 1} reply lên GitLab`,
+        );
+      }
       setPasteByComment((prev) => ({ ...prev, [commentId]: "" }));
       await loadSession();
     } catch {
-      toast.error("Lỗi kết nối khi lưu reply");
+      toast.error("Lỗi kết nối khi lưu & push reply");
     } finally {
       setActionLoading("");
     }
@@ -398,18 +277,51 @@ export default function ReviewSessionPage() {
         body: JSON.stringify({
           sessionId: params.id,
           pastedText: batchPaste,
+          pushAfterSave: true,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(typeof data.error === "string" ? data.error : "Lưu batch reply thất bại");
+        toast.error(
+          typeof data.error === "string" ? data.error : "Lưu & push batch thất bại",
+        );
         return;
       }
-      toast.success(`Đã lưu ${data.savedCount ?? 0} reply từ Cursor`);
+      if (typeof data.pushError === "string" && data.pushError) {
+        toast.error(
+          `Đã lưu ${data.savedCount ?? 0} reply nhưng push lỗi: ${data.pushError}`,
+        );
+      } else {
+        toast.success(
+          `Đã lưu & push ${data.pushedCount ?? data.savedCount ?? 0} reply lên GitLab`,
+        );
+      }
       setBatchPaste("");
       await loadSession();
     } catch {
-      toast.error("Lỗi kết nối khi lưu batch reply");
+      toast.error("Lỗi kết nối khi lưu & push batch reply");
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function retryPushValid(commentId: string) {
+    setActionLoading(`push-valid-${commentId}`);
+    try {
+      const res = await fetch("/api/reviews/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: params.id, commentIds: [commentId] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === "string" ? data.error : "Push reply thất bại");
+        return;
+      }
+      toast.success("Đã push lại reply lên GitLab");
+      await loadSession();
+    } catch {
+      toast.error("Lỗi kết nối khi push reply");
     } finally {
       setActionLoading("");
     }
@@ -439,9 +351,11 @@ export default function ReviewSessionPage() {
   const otherCount = session.commentResults.filter(
     (c) => c.verdict !== "VALID" && c.verdict !== "INVALID" && c.verdict !== "PARTIAL",
   ).length;
-  const fixedValidWithReply = validComments.filter((c) => !!c.suggestedReply?.trim());
-  const fixedValidReady = fixedValidWithReply.filter((c) => !c.pushedToGitlab).length;
-  const fixedValidPushed = fixedValidWithReply.filter((c) => c.pushedToGitlab).length;
+  const fixReplyComments = validComments.filter((c) => c.fixReplyReady);
+  const fixReplyReady = fixReplyComments.filter((c) => !c.pushedToGitlab).length;
+  const fixReplyPushed = validComments.filter((c) => c.pushedToGitlab).length;
+  const validAwaitingFix = validComments.filter((c) => !c.fixReplyReady).length;
+  const validUnpushed = validCount - fixReplyPushed;
 
   const filteredComments = session.commentResults.filter((c) => {
     if (verdictFilter === "all") return true;
@@ -473,18 +387,6 @@ export default function ReviewSessionPage() {
         onClose={() => setPushModal(null)}
         onConfirm={handlePushModalConfirm}
       />
-      <PushChoiceModal
-        open={pushModal === "fixed-valid"}
-        title="Push comment đã fix"
-        description="Có reply VALID vừa đã push vừa chưa push. Chọn phạm vi muốn đẩy."
-        totalCount={fixedValidWithReply.length}
-        pushedCount={fixedValidPushed}
-        unpushedCount={fixedValidReady}
-        loading={actionLoading === "push-fixed-valid"}
-        onClose={() => setPushModal(null)}
-        onConfirm={handlePushModalConfirm}
-      />
-
       <div className="sticky top-16 z-30 -mx-1 space-y-3 border-b border-border bg-header px-1 py-3 backdrop-blur-xl">
         <div className="flex flex-wrap items-center gap-3">
           <Link href="/reviews/history">
@@ -593,41 +495,6 @@ export default function ReviewSessionPage() {
           )}
         </div>
 
-        {(invalidCount > 0 || fixedValidWithReply.length > 0) && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted">
-            {invalidCount > 0 && (
-              <span>
-                Invalid:{" "}
-                <span className="font-medium text-foreground">{invalidCount}</span>
-                {" · "}
-                Đã push:{" "}
-                <span className="font-medium text-foreground">{invalidPushed}</span>
-                {" · "}
-                Còn lại:{" "}
-                <span className="font-medium text-orange-600 dark:text-orange-300">
-                  {invalidUnpushed}
-                </span>
-              </span>
-            )}
-            {fixedValidWithReply.length > 0 && (
-              <span>
-                VALID đã có reply:{" "}
-                <span className="font-medium text-foreground">
-                  {fixedValidWithReply.length}
-                </span>
-                {" · "}
-                Đã push:{" "}
-                <span className="font-medium text-foreground">{fixedValidPushed}</span>
-                {" · "}
-                Chưa push:{" "}
-                <span className="font-medium text-emerald-700 dark:text-emerald-300">
-                  {fixedValidReady}
-                </span>
-              </span>
-            )}
-          </div>
-        )}
-
         <div className="flex flex-wrap gap-2">
           <ContinueValidateButton
             sessionId={session.id}
@@ -659,34 +526,6 @@ export default function ReviewSessionPage() {
               Copy prompt fix tất cả VALID
             </Button>
           )}
-          {validCount > 0 && (
-            <Button
-              variant="success"
-              size="sm"
-              onClick={fixAllValid}
-              loading={actionLoading === "fix-all"}
-            >
-              {actionLoading !== "fix-all" && <Wrench className="h-4 w-4" />}
-              {actionLoading === "fix-all" ? "Đang fix..." : "AI fix tất cả VALID"}
-            </Button>
-          )}
-          {(fixedValidReady > 0 || fixedValidPushed > 0) && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={pushAllFixedValid}
-              loading={actionLoading === "push-fixed-valid"}
-            >
-              {actionLoading !== "push-fixed-valid" && (
-                <MessageSquare className="h-4 w-4" />
-              )}
-              {actionLoading === "push-fixed-valid"
-                ? "Đang push..."
-                : fixedValidReady > 0
-                  ? `Push comment đã fix (${fixedValidReady} còn lại)`
-                  : `Push lại comment đã fix (${fixedValidPushed})`}
-            </Button>
-          )}
           {invalidCount > 0 && (
             <Button
               variant="destructive"
@@ -702,16 +541,172 @@ export default function ReviewSessionPage() {
                   : `Push lại tất cả INVALID (${invalidCount})`}
             </Button>
           )}
-          {session.hasFixedSource && (
-            <a href={`/api/reviews/${session.id}/download`}>
-              <Button variant="secondary" size="sm">
-                <Download className="h-4 w-4" />
-                Tải source đã fix
-              </Button>
-            </a>
-          )}
         </div>
       </div>
+
+      {(invalidCount > 0 || validCount > 0) && (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {invalidCount > 0 && (
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+              <div className="flex items-center justify-between gap-2 border-b border-orange-500/20 bg-orange-500/10 px-3 py-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-white">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      Không hợp lý (INVALID)
+                    </p>
+                    <p className="truncate text-[11px] text-muted">
+                      Reply phản bác — đẩy lên GitLab
+                    </p>
+                  </div>
+                </div>
+                {invalidUnpushed > 0 ? (
+                  <span className="shrink-0 rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-semibold text-white">
+                    Còn {invalidUnpushed} chưa đẩy
+                  </span>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                    Đã đẩy hết
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 divide-x divide-border">
+                <div className="px-3 py-3 text-center">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-soft">
+                    Tổng
+                  </p>
+                  <p className="mt-0.5 text-2xl font-bold tabular-nums text-foreground">
+                    {invalidCount}
+                  </p>
+                </div>
+                <div className="px-3 py-3 text-center">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                    Đã đẩy
+                  </p>
+                  <p className="mt-0.5 text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                    {invalidPushed}
+                  </p>
+                </div>
+                <div className="bg-orange-500/5 px-3 py-3 text-center">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-orange-700 dark:text-orange-300">
+                    Chưa đẩy
+                  </p>
+                  <p className="mt-0.5 text-2xl font-bold tabular-nums text-orange-600 dark:text-orange-300">
+                    {invalidUnpushed}
+                  </p>
+                </div>
+              </div>
+              <div className="border-t border-border px-3 py-2">
+                <div className="mb-1 flex justify-between text-[10px] text-muted">
+                  <span>Tiến độ đẩy GitLab</span>
+                  <span className="tabular-nums font-medium text-foreground">
+                    {invalidCount > 0
+                      ? Math.round((invalidPushed / invalidCount) * 100)
+                      : 0}
+                    %
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted/40">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all"
+                    style={{
+                      width: `${invalidCount > 0 ? (invalidPushed / invalidCount) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {validCount > 0 && (
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+              <div className="flex items-center justify-between gap-2 border-b border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      Hợp lý (VALID)
+                    </p>
+                    <p className="truncate text-[11px] text-muted">
+                      Prompt fix → lưu &amp; push GitLab
+                    </p>
+                  </div>
+                </div>
+                {validUnpushed > 0 ? (
+                  <span className="shrink-0 rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-semibold text-white">
+                    Còn {validUnpushed} chưa đẩy
+                  </span>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                    Đã đẩy hết
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 divide-x divide-border">
+                <div className="px-3 py-3 text-center">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-soft">
+                    Tổng
+                  </p>
+                  <p className="mt-0.5 text-2xl font-bold tabular-nums text-foreground">
+                    {validCount}
+                  </p>
+                </div>
+                <div className="px-3 py-3 text-center">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                    Đã đẩy
+                  </p>
+                  <p className="mt-0.5 text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                    {fixReplyPushed}
+                  </p>
+                </div>
+                <div className="bg-amber-500/5 px-3 py-3 text-center">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                    Chưa đẩy
+                  </p>
+                  <p className="mt-0.5 text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-300">
+                    {validUnpushed}
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2 border-t border-border px-3 py-2">
+                <div className="mb-1 flex justify-between text-[10px] text-muted">
+                  <span>Tiến độ đẩy GitLab</span>
+                  <span className="tabular-nums font-medium text-foreground">
+                    {validCount > 0
+                      ? Math.round((fixReplyPushed / validCount) * 100)
+                      : 0}
+                    %
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted/40">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all"
+                    style={{
+                      width: `${
+                        validCount > 0 ? (fixReplyPushed / validCount) * 100 : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
+                  <span>
+                    Chờ prompt fix:{" "}
+                    <strong className="text-foreground">{validAwaitingFix}</strong>
+                  </span>
+                  <span>
+                    Đã có reply (chưa đẩy):{" "}
+                    <strong className="text-foreground">{fixReplyReady}</strong>
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {session.zipWarning && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
@@ -744,12 +739,9 @@ export default function ReviewSessionPage() {
               </li>
               <li>AI sửa code trong workspace theo file/dòng + comment GitLab.</li>
               <li>
-                Copy khối Markdown reply mà AI trả ra (có Comment ID) → paste vào ô bên dưới →{" "}
-                <strong className="text-foreground">Đồng ý &amp; lưu reply</strong>.
-              </li>
-              <li>
-                Nhấn <strong className="text-foreground">Push các comment đã fix</strong> (hoặc
-                push từng cái).
+                Copy khối Markdown reply (có Comment ID) → paste vào ô bên dưới → nhấn{" "}
+                <strong className="text-foreground">Đồng ý, lưu &amp; push</strong> — hệ thống
+                lưu reply và đẩy lên GitLab ngay.
               </li>
             </ol>
             <Textarea
@@ -765,7 +757,7 @@ export default function ReviewSessionPage() {
               loading={actionLoading === "save-batch-reply"}
               disabled={!batchPaste.trim()}
             >
-              Đồng ý &amp; lưu reply (batch)
+              Đồng ý, lưu &amp; push (batch)
             </Button>
           </CardContent>
         </Card>
@@ -921,8 +913,8 @@ export default function ReviewSessionPage() {
                       )}
                       <div className="space-y-2">
                         <p className="text-xs text-muted">
-                          Sau khi Cursor fix xong, paste khối Markdown reply (kèm Comment ID)
-                          vào đây:
+                          Sau khi Cursor fix xong, paste khối Markdown reply (kèm Comment ID).
+                          Nhấn nút bên dưới sẽ lưu và push lên GitLab ngay:
                         </p>
                         <Textarea
                           placeholder={`## Đánh giá: **Review đúng — đã xử lý**\n...\nComment ID: \`${comment.id}\``}
@@ -942,7 +934,7 @@ export default function ReviewSessionPage() {
                           loading={actionLoading === `save-reply-${comment.id}`}
                           disabled={!pasteByComment[comment.id]?.trim()}
                         >
-                          Đồng ý &amp; lưu reply
+                          Đồng ý, lưu &amp; push
                         </Button>
                       </div>
                     </div>
@@ -953,20 +945,26 @@ export default function ReviewSessionPage() {
                       className={`rounded-xl border p-4 ${
                         comment.verdict === "INVALID"
                           ? "border-orange-500/20 bg-orange-500/5"
-                          : "border-violet-500/20 bg-violet-500/5"
+                          : comment.fixReplyReady
+                            ? "border-emerald-500/25 bg-emerald-500/5"
+                            : "border-sky-500/25 bg-sky-500/5"
                       }`}
                     >
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <p
                           className={`text-xs font-medium ${
                             comment.verdict === "INVALID"
-                              ? "text-orange-300"
-                              : "text-violet-300"
+                              ? "text-orange-700 dark:text-orange-300"
+                              : comment.fixReplyReady
+                                ? "text-emerald-700 dark:text-emerald-300"
+                                : "text-sky-700 dark:text-sky-300"
                           }`}
                         >
                           {comment.verdict === "INVALID"
-                            ? "Reply phản bác — bảo vệ code hiện tại"
-                            : "Reply đã fix / đề xuất"}
+                            ? "Reply phản bác — sẽ push lên GitLab"
+                            : comment.fixReplyReady
+                              ? "Reply sau prompt fix — đã/đủ để push GitLab"
+                              : "Đề xuất chỉnh sửa (không push — dùng prompt fix để tạo reply)"}
                         </p>
                         <Button
                           type="button"
@@ -981,7 +979,7 @@ export default function ReviewSessionPage() {
                           ) : (
                             <Copy className="h-3.5 w-3.5" />
                           )}
-                          {replyCopied ? "Đã copy" : "Copy reply"}
+                          {replyCopied ? "Đã copy" : "Copy"}
                         </Button>
                       </div>
                       <MarkdownPreview content={comment.suggestedReply} />
@@ -989,32 +987,20 @@ export default function ReviewSessionPage() {
                   )}
 
                   <div className="flex flex-wrap gap-2">
-                    {comment.verdict === "VALID" && (
-                      <>
+                    {comment.verdict === "VALID" &&
+                      comment.fixReplyReady &&
+                      !comment.pushedToGitlab && (
                         <Button
                           size="sm"
-                          variant="success"
-                          onClick={() => fixComment(comment.id)}
-                          loading={actionLoading === comment.id}
+                          variant="outline"
+                          onClick={() => retryPushValid(comment.id)}
+                          loading={actionLoading === `push-valid-${comment.id}`}
                         >
-                          {actionLoading === comment.id
-                            ? "Đang fix..."
-                            : "AI fix comment này"}
+                          {actionLoading === `push-valid-${comment.id}`
+                            ? "Đang push..."
+                            : "Push lại lên GitLab"}
                         </Button>
-                        {!!comment.suggestedReply?.trim() && !comment.pushedToGitlab && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => pushValidReply(comment.id)}
-                            loading={actionLoading === `push-valid-${comment.id}`}
-                          >
-                            {actionLoading === `push-valid-${comment.id}`
-                              ? "Đang push..."
-                              : "Push comment đã fix"}
-                          </Button>
-                        )}
-                      </>
-                    )}
+                      )}
                     {comment.verdict === "INVALID" && !comment.pushedToGitlab && (
                       <Button
                         size="sm"

@@ -107,7 +107,9 @@ export async function POST(request: Request) {
       const updated = await prisma.commentValidationResult.update({
         where: { id: comment.id },
         data: {
+          // AI fix source — không phải reply prompt-fix, không cho push VALID
           suggestedReply: result.reply,
+          fixReplyReady: false,
           fixedFilesJson: JSON.stringify(result.fixedFiles),
         },
       });
