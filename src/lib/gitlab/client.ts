@@ -126,6 +126,39 @@ export async function listOpenAuthoredMergeRequests(
   token: string,
   limit = 12,
 ) {
+  const fast = await listOpenAuthoredMergeRequestsFast(host, token, limit);
+  const api = createGitlabClient(host, token);
+
+  // Bổ sung path/name project khi cần (có thể chậm — chỉ dùng chỗ cần đầy đủ)
+  return Promise.all(
+    fast.map(async (mr) => {
+      if (mr.projectPath && !mr.projectPath.startsWith("project/")) {
+        return mr;
+      }
+      try {
+        const project = await api.Projects.show(mr.projectId);
+        return {
+          ...mr,
+          projectPath:
+            (project as { path_with_namespace?: string }).path_with_namespace ??
+            mr.projectPath,
+          projectName: (project as { name?: string }).name ?? mr.projectName,
+        };
+      } catch {
+        return mr;
+      }
+    }),
+  );
+}
+
+/**
+ * List MR mở nhanh: 1 call Users + 1 call MRs — không gọi Projects.show từng MR.
+ */
+export async function listOpenAuthoredMergeRequestsFast(
+  host: string,
+  token: string,
+  limit = 5,
+) {
   const api = createGitlabClient(host, token);
   const user = await api.Users.showCurrentUser();
 
@@ -135,52 +168,30 @@ export async function listOpenAuthoredMergeRequests(
     authorId: user.id,
     orderBy: "updated_at",
     sort: "desc",
-    perPage: limit,
+    perPage: Math.min(limit, 20),
+    maxPages: 1,
   });
 
-  const results: Array<{
-    projectId: string;
-    projectPath: string;
-    projectName: string;
-    iid: number;
-    title: string;
-    sourceBranch: string;
-    targetBranch: string;
-    webUrl: string;
-    updatedAt: string;
-  }> = [];
-
-  for (const mr of mrs) {
+  return (mrs ?? []).slice(0, limit).map((mr) => {
     const projectId = String(mr.project_id);
-    let pathWithNamespace =
+    const fromRefs =
       (mr as { references?: { full?: string } }).references?.full?.split(
         "!",
       )[0] ?? "";
-    let projectName = "";
-    try {
-      const project = await api.Projects.show(projectId);
-      pathWithNamespace =
-        (project as { path_with_namespace?: string }).path_with_namespace ??
-        pathWithNamespace;
-      projectName = (project as { name?: string }).name ?? "";
-    } catch {
-      // keep fallback
-    }
+    const pathWithNamespace = fromRefs.replace(/!$/, "").trim();
 
-    results.push({
+    return {
       projectId,
-      projectPath: pathWithNamespace.replace(/!$/, "").trim() || `project/${projectId}`,
-      projectName,
+      projectPath: pathWithNamespace || `project/${projectId}`,
+      projectName: "",
       iid: mr.iid,
       title: mr.title ?? "",
       sourceBranch: mr.source_branch,
       targetBranch: mr.target_branch,
       webUrl: mr.web_url ?? "",
       updatedAt: mr.updated_at ?? new Date().toISOString(),
-    });
-  }
-
-  return results;
+    };
+  });
 }
 
 /** Đếm discussion chưa resolve trên MR (nhẹ hơn getUnresolvedComments). */

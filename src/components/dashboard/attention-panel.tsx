@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PageSkeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toaster";
 import {
   AlertTriangle,
@@ -47,15 +46,27 @@ const kindBadge: Record<
   open_mr: { label: "MR mở", variant: "violet" },
 };
 
+function mergeItems(local: AttentionItem[], remote: AttentionItem[]) {
+  const map = new Map<string, AttentionItem>();
+  for (const item of [...local, ...remote]) {
+    map.set(item.id, item);
+  }
+  return [...map.values()].sort(
+    (a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+}
+
 export function AttentionPanel() {
   const [items, setItems] = useState<AttentionItem[]>([]);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingLocal, setLoadingLocal] = useState(true);
+  const [loadingGitlab, setLoadingGitlab] = useState(false);
 
-  async function load() {
-    setLoading(true);
+  const loadLocal = useCallback(async () => {
+    setLoadingLocal(true);
     try {
-      const res = await fetch("/api/reviews/attention");
+      const res = await fetch("/api/reviews/attention?source=local");
       const data = await res.json();
       if (!res.ok) {
         toast.error(
@@ -63,22 +74,61 @@ export function AttentionPanel() {
             ? data.error
             : "Không tải được danh sách MR cần xử lý",
         );
-        return;
+        return [];
       }
-      setItems(data.items ?? []);
+      const list: AttentionItem[] = data.items ?? [];
+      setItems(list);
       setCounts(data.counts ?? null);
+      return list;
     } catch {
       toast.error("Lỗi kết nối khi tải MR cần xử lý");
+      return [];
     } finally {
-      setLoading(false);
+      setLoadingLocal(false);
     }
-  }
-
-  useEffect(() => {
-    load();
   }, []);
 
-  if (loading && items.length === 0) {
+  const loadGitlab = useCallback(async (localItems: AttentionItem[]) => {
+    setLoadingGitlab(true);
+    try {
+      const res = await fetch("/api/reviews/attention?source=gitlab");
+      const data = await res.json();
+      if (!res.ok) return;
+      const remote: AttentionItem[] = data.items ?? [];
+      if (remote.length === 0) return;
+      setItems(mergeItems(localItems, remote));
+      setCounts((prev) => ({
+        ...(prev ?? {}),
+        openMr: data.counts?.openMr ?? remote.length,
+        total: mergeItems(localItems, remote).length,
+      }));
+    } catch {
+      // GitLab phụ — không chặn UI
+    } finally {
+      setLoadingGitlab(false);
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const local = await loadLocal();
+    await loadGitlab(local);
+  }, [loadLocal, loadGitlab]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const local = await loadLocal();
+      if (cancelled) return;
+      await loadGitlab(local);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadLocal, loadGitlab]);
+
+  const loading = loadingLocal && items.length === 0;
+
+  if (loading) {
     return (
       <Card>
         <CardHeader>
@@ -86,9 +136,17 @@ export function AttentionPanel() {
             <GitPullRequest className="h-5 w-5" />
             MR cần xử lý
           </CardTitle>
+          <CardDescription>Đang tải từ lịch sử phiên…</CardDescription>
         </CardHeader>
         <CardContent>
-          <PageSkeleton />
+          <div className="space-y-2">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-16 animate-pulse rounded-xl border border-border bg-surface"
+              />
+            ))}
+          </div>
         </CardContent>
       </Card>
     );
@@ -103,12 +161,17 @@ export function AttentionPanel() {
             MR cần xử lý
           </CardTitle>
           <CardDescription>
-            INVALID/VALID chưa push, phiên lỗi, và MR mở còn discussion chưa
-            resolve
-            {counts ? ` · ${counts.total ?? 0} mục` : ""}
+            INVALID/VALID chưa push, phiên lỗi
+            {counts ? ` · ${counts.total ?? items.length} mục` : ""}
+            {loadingGitlab ? " · đang lấy MR mở từ GitLab…" : ""}
           </CardDescription>
         </div>
-        <Button variant="outline" size="sm" onClick={load} loading={loading}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={refresh}
+          loading={loadingLocal || loadingGitlab}
+        >
           <RefreshCw className="h-3.5 w-3.5" />
           Làm mới
         </Button>
