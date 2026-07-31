@@ -23,6 +23,8 @@ interface Connection {
   name: string;
   host: string;
   isDefault?: boolean;
+  ownership?: "owned" | "shared";
+  owner?: { id: string; name: string | null; email: string };
 }
 
 interface Project {
@@ -41,6 +43,8 @@ interface Category {
   id: string;
   name: string;
   level: number;
+  ownership?: "owned" | "shared";
+  owner?: { id: string; name: string | null; email: string };
 }
 
 export default function NewReviewPage() {
@@ -352,6 +356,9 @@ export default function NewReviewPage() {
                 <option key={c.id} value={c.id}>
                   {c.isDefault ? "★ " : ""}
                   {c.name} — {c.host}
+                  {c.ownership === "shared"
+                    ? ` (từ ${c.owner?.name || c.owner?.email || "shared"})`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -471,7 +478,11 @@ export default function NewReviewPage() {
                         key={c.id}
                         type="button"
                         onClick={() => toggleCategory(c.id)}
-                        title={`L${c.level} ${c.name}`}
+                        title={
+                          c.ownership === "shared"
+                            ? `L${c.level} ${c.name} — từ ${c.owner?.name || c.owner?.email || "shared"}`
+                            : `L${c.level} ${c.name}`
+                        }
                         className={`max-w-full truncate rounded-full px-3 py-1 text-xs transition ${
                           selectedCategories.includes(c.id)
                             ? "bg-violet-500/30 text-violet-200 ring-1 ring-violet-500/50"
@@ -479,6 +490,7 @@ export default function NewReviewPage() {
                         }`}
                       >
                         L{c.level} {c.name}
+                        {c.ownership === "shared" ? " · shared" : ""}
                       </button>
                     ))
                   )}

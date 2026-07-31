@@ -4,7 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Bot, GitBranch, ShieldCheck } from "lucide-react";
+import { AttentionPanel } from "@/components/dashboard/attention-panel";
+import {
+  ArrowRight,
+  Bot,
+  GitBranch,
+  ShieldCheck,
+  Webhook,
+} from "lucide-react";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -26,6 +33,23 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {session?.user?.role === "admin" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3">
+          <div>
+            <p className="font-semibold text-foreground">Bạn đang đăng nhập với quyền Admin</p>
+            <p className="text-sm text-muted">
+              Quản lý users, usage, sessions, shared AI/convention, cấu hình hệ thống…
+            </p>
+          </div>
+          <Link href="/admin">
+            <Button>
+              Vào Admin
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
+        </div>
+      )}
+
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard</h1>
         <p className="mt-1 text-muted">
@@ -77,15 +101,23 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
+      <AttentionPanel />
+
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <CardTitle>Bắt đầu nhanh</CardTitle>
-            <CardDescription>3 bước để validate review MR</CardDescription>
+            <CardDescription>Validate thủ công hoặc tự động bằng webhook</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/stats">
-              <Button variant="secondary">Xem thống kê</Button>
+            <Link href="/settings/webhooks">
+              <Button variant="outline">
+                <Webhook className="h-4 w-4" />
+                Webhook
+              </Button>
+            </Link>
+            <Link href="/stats/quality">
+              <Button variant="secondary">Báo cáo chất lượng</Button>
             </Link>
             <Link href="/reviews">
               <Button>
@@ -97,9 +129,9 @@ export default async function DashboardPage() {
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-3">
           {[
-            "1. Kết nối GitLab (PAT cho nội bộ như gitlab.gss-sol.com)",
-            "2. Chọn project, MR và convention",
-            "3. Chạy validate → fix hoặc push reply invalid",
+            "1. Kết nối GitLab + cấu hình AI / convention",
+            "2. (Tuỳ chọn) Gắn webhook — comment \"Agent reject review\" trên MR",
+            "3. Xử lý INVALID/VALID trên Dashboard → MR cần xử lý",
           ].map((step) => (
             <div
               key={step}

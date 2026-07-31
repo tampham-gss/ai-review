@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
+import { getSharesReceivedMap, listSharedResourceIds } from "@/lib/shares";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -7,8 +8,22 @@ export async function GET() {
   const authResult = await requireUser();
   if ("error" in authResult) return authResult.error;
 
+  const sharedIds = await listSharedResourceIds(
+    authResult.userId,
+    "convention_category",
+  );
+  const receivedMap = await getSharesReceivedMap(
+    authResult.userId,
+    "convention_category",
+  );
+
   const categories = await prisma.conventionCategory.findMany({
-    where: { userId: authResult.userId },
+    where: {
+      OR: [
+        { userId: authResult.userId },
+        ...(sharedIds.length > 0 ? [{ id: { in: sharedIds } }] : []),
+      ],
+    },
     include: {
       files: true,
       children: true,
@@ -17,7 +32,19 @@ export async function GET() {
     orderBy: [{ level: "asc" }, { name: "asc" }],
   });
 
-  return NextResponse.json({ categories });
+  return NextResponse.json({
+    categories: categories.map((c) => {
+      const isOwner = c.userId === authResult.userId;
+      const share = receivedMap.get(c.id);
+      return {
+        ...c,
+        ownership: isOwner ? "owned" : "shared",
+        canEdit: isOwner || !!share?.canEdit,
+        isOwner,
+        owner: c.user,
+      };
+    }),
+  });
 }
 
 const categorySchema = z.object({

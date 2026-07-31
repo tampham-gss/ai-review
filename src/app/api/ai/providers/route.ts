@@ -5,6 +5,7 @@ import { testAiConnection } from "@/lib/ai/providers";
 import { getProviderRatingsForUser } from "@/lib/ai/provider-ratings";
 import { aiProviderCreateSchema } from "@/lib/ai/schemas";
 import type { AiProviderName } from "@/lib/ai/provider-registry";
+import { getSharesReceivedMap, listSharedResourceIds } from "@/lib/shares";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -12,12 +13,27 @@ export async function GET() {
   const authResult = await requireUser();
   if ("error" in authResult) return authResult.error;
 
+  const sharedIds = await listSharedResourceIds(
+    authResult.userId,
+    "ai_provider",
+  );
+  const receivedMap = await getSharesReceivedMap(
+    authResult.userId,
+    "ai_provider",
+  );
+
   const [providers, ratings] = await Promise.all([
     prisma.aiProvider.findMany({
-      where: { userId: authResult.userId },
+      where: {
+        OR: [
+          { userId: authResult.userId },
+          ...(sharedIds.length > 0 ? [{ id: { in: sharedIds } }] : []),
+        ],
+      },
       orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
       select: {
         id: true,
+        userId: true,
         provider: true,
         baseUrl: true,
         model: true,
@@ -26,6 +42,7 @@ export async function GET() {
         tokenLimit: true,
         tokensUsed: true,
         priority: true,
+        user: { select: { id: true, name: true, email: true } },
       },
     }),
     getProviderRatingsForUser(authResult.userId),
@@ -36,9 +53,23 @@ export async function GET() {
   return NextResponse.json({
     providers: providers.map((p) => {
       const rating = ratingById.get(p.id);
+      const isOwner = p.userId === authResult.userId;
+      const share = receivedMap.get(p.id);
       return {
-        ...p,
+        id: p.id,
+        provider: p.provider,
+        baseUrl: p.baseUrl,
+        model: p.model,
+        isDefault: isOwner ? p.isDefault : false,
+        isEnabled: p.isEnabled,
+        tokenLimit: p.tokenLimit,
+        tokensUsed: p.tokensUsed,
+        priority: p.priority,
         remaining: p.tokenLimit ? Math.max(0, p.tokenLimit - p.tokensUsed) : null,
+        ownership: isOwner ? "owned" : "shared",
+        canEdit: isOwner || !!share?.canEdit,
+        isOwner,
+        owner: p.user,
         rating: rating
           ? {
               overallStars: rating.overallStars,
@@ -106,6 +137,9 @@ export async function POST(request: Request) {
         remaining: provider.tokenLimit
           ? Math.max(0, provider.tokenLimit - provider.tokensUsed)
           : null,
+        ownership: "owned",
+        canEdit: true,
+        isOwner: true,
       },
     });
   } catch (error) {

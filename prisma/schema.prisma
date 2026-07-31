@@ -8,18 +8,30 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String?
-  name         String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String?
+  name               String?
+  /** user | admin */
+  role               String    @default("user")
+  isDisabled         Boolean   @default(false)
+  /** null = dùng SystemSettings.defaultMonthlyTokenQuota */
+  monthlyTokenQuota  Int?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   gitlabConnections    GitlabConnection[]
   aiProviders          AiProvider[]
   conventionCategories ConventionCategory[]
   reviewSessions       ReviewSession[]
   tokenUsageLogs       TokenUsageLog[]
+  auditLogs            AuditLog[]           @relation("AuditActor")
+  sharesOwned          ResourceShare[]      @relation("ResourceShareOwner")
+  sharesReceived       ResourceShare[]      @relation("ResourceShareRecipient")
+  webhookConfigs       WebhookAutoValidate[]
+
+  @@index([role])
+  @@index([createdAt])
 }
 
 model GitlabConnection {
@@ -100,6 +112,8 @@ model ReviewSession {
   commentResults CommentValidationResult[]
 
   @@index([userId, createdAt])
+  @@index([status, updatedAt])
+  @@index([userId, projectId, mrIid])
 }
 
 model CommentValidationResult {
@@ -141,6 +155,7 @@ model TokenUsageLog {
   createdAt  DateTime @default(now())
 
   @@index([userId, createdAt])
+  @@index([createdAt])
 }
 
 model PasswordResetOtp {
@@ -154,4 +169,120 @@ model PasswordResetOtp {
   createdAt DateTime  @default(now())
 
   @@index([email, purpose, createdAt])
+}
+
+/** Singleton cấu hình hệ thống (id = "default") */
+model SystemSettings {
+  id                      String   @id @default("default")
+  registrationOpen        Boolean  @default(true)
+  maintenanceMode         Boolean  @default(false)
+  announcement            String?  @db.Text
+  /** null = không giới hạn */
+  defaultMonthlyTokenQuota Int?
+  retentionDays           Int      @default(90)
+  updatedAt               DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      String
+  targetType  String?
+  targetId    String?
+  metaJson    String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action])
+}
+
+/** Convention dùng chung toàn hệ thống (admin quản lý) */
+model SharedConventionCategory {
+  id        String                     @id @default(cuid())
+  name      String
+  level     Int                        @default(1)
+  parentId  String?
+  parent    SharedConventionCategory?  @relation("SharedCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  SharedConventionCategory[] @relation("SharedCategoryTree")
+  files     SharedConventionFile[]
+  isEnabled Boolean                    @default(true)
+  createdAt DateTime                   @default(now())
+  updatedAt DateTime                   @updatedAt
+}
+
+model SharedConventionFile {
+  id         String                   @id @default(cuid())
+  categoryId String
+  category   SharedConventionCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name       String
+  content    String                   @db.Text
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
+}
+
+/** AI provider dùng chung (admin) — user có thể chọn dùng shared */
+model SharedAiProvider {
+  id              String   @id @default(cuid())
+  name            String
+  provider        String
+  apiKeyEncrypted String
+  baseUrl         String?
+  model           String?
+  isEnabled       Boolean  @default(true)
+  priority        Int      @default(0)
+  tokenLimit      Int?
+  tokensUsed      Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/**
+ * Chia sẻ peer-to-peer: convention category / AI provider / GitLab connection.
+ * resourceType: convention_category | ai_provider | gitlab_connection
+ */
+model ResourceShare {
+  id               String   @id @default(cuid())
+  resourceType     String
+  resourceId       String
+  ownerUserId      String
+  owner            User     @relation("ResourceShareOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  sharedWithUserId String
+  sharedWith       User     @relation("ResourceShareRecipient", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  canEdit          Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([resourceType, resourceId, sharedWithUserId])
+  @@index([sharedWithUserId, resourceType])
+  @@index([ownerUserId, resourceType])
+  @@index([resourceType, resourceId])
+}
+
+/**
+ * Cấu hình webhook GitLab: khi comment đúng triggerPhrase trên MR
+ * → auto validate với connection / convention / AI mặc định.
+ */
+model WebhookAutoValidate {
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                String    @default("GitLab auto validate")
+  /** Khớp header X-Gitlab-Token */
+  secret              String    @unique
+  /** Comment phải khớp đúng (sau trim) mới trigger */
+  triggerPhrase       String    @default("Agent reject review")
+  connectionId        String
+  selectedCategoryIds String[]
+  aiProviderId        String?
+  isEnabled           Boolean   @default(true)
+  lastTriggeredAt     DateTime?
+  lastSessionId       String?
+  lastError           String?   @db.Text
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([isEnabled])
 }

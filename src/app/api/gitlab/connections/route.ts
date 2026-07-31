@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { testGitlabConnection } from "@/lib/gitlab/client";
 import { normalizeGitlabHost } from "@/lib/utils";
+import { getSharesReceivedMap, listSharedResourceIds } from "@/lib/shares";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -29,13 +30,51 @@ export async function GET() {
     }
   }
 
+  const sharedIds = await listSharedResourceIds(
+    authResult.userId,
+    "gitlab_connection",
+  );
+  const receivedMap = await getSharesReceivedMap(
+    authResult.userId,
+    "gitlab_connection",
+  );
+
   const connections = await prisma.gitlabConnection.findMany({
-    where: { userId: authResult.userId },
+    where: {
+      OR: [
+        { userId: authResult.userId },
+        ...(sharedIds.length > 0 ? [{ id: { in: sharedIds } }] : []),
+      ],
+    },
     orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
-    select: { id: true, name: true, host: true, isDefault: true, createdAt: true },
+    select: {
+      id: true,
+      userId: true,
+      name: true,
+      host: true,
+      isDefault: true,
+      createdAt: true,
+      user: { select: { id: true, name: true, email: true } },
+    },
   });
 
-  return NextResponse.json({ connections });
+  return NextResponse.json({
+    connections: connections.map((c) => {
+      const isOwner = c.userId === authResult.userId;
+      const share = receivedMap.get(c.id);
+      return {
+        id: c.id,
+        name: c.name,
+        host: c.host,
+        isDefault: isOwner ? c.isDefault : false,
+        createdAt: c.createdAt,
+        ownership: isOwner ? "owned" : "shared",
+        canEdit: isOwner || !!share?.canEdit,
+        isOwner,
+        owner: c.user,
+      };
+    }),
+  });
 }
 
 const createSchema = z.object({
@@ -77,7 +116,15 @@ export async function POST(request: Request) {
       select: { id: true, name: true, host: true, isDefault: true },
     });
 
-    return NextResponse.json({ connection, user });
+    return NextResponse.json({
+      connection: {
+        ...connection,
+        ownership: "owned",
+        canEdit: true,
+        isOwner: true,
+      },
+      user,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Không thể kết nối GitLab";

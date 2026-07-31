@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -229,6 +230,11 @@ export default function StatsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link href="/stats/quality">
+            <Button size="sm" variant="outline">
+              Báo cáo chất lượng
+            </Button>
+          </Link>
           {RANGES.map((r) => (
             <Button
               key={r.id}

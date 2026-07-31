@@ -72,8 +72,19 @@ function LoginForm() {
 
       // Hard navigation: đảm bảo cookie session được gửi kèm request tiếp theo
       // (router.push RSC dễ kẹt khi proxy/middleware vừa đọc cookie)
-      const next = searchParams.get("callbackUrl") || "/dashboard";
-      window.location.assign(next.startsWith("/") ? next : "/dashboard");
+      let next = searchParams.get("callbackUrl") || "/dashboard";
+      if (!next.startsWith("/")) next = "/dashboard";
+
+      // Admin vào thẳng /admin nếu không có callbackUrl cụ thể
+      if (!searchParams.get("callbackUrl")) {
+        try {
+          const me = await fetch("/api/auth/session").then((r) => r.json());
+          if (me?.user?.role === "admin") next = "/admin";
+        } catch {
+          // giữ /dashboard
+        }
+      }
+      window.location.assign(next);
     } catch {
       setError("Không gọi được /api/auth. Kiểm tra AUTH_SECRET và DATABASE_URL trên Vercel.");
       setLoading(false);
@@ -89,11 +100,12 @@ function LoginForm() {
       <CardContent className="space-y-4">
         <form onSubmit={handleSubmit} className="space-y-3">
           <Input
-            type="email"
-            placeholder="Email"
+            type="text"
+            placeholder="Email / tài khoản"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            autoComplete="username"
           />
           <Input
             type="password"

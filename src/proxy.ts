@@ -10,8 +10,13 @@ import type { NextRequest } from "next/server";
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Auth / health — luôn cho qua
-  if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/health")) {
+  // Auth / health / GitLab webhooks — luôn cho qua
+  if (
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/health") ||
+    pathname.startsWith("/api/system/status") ||
+    pathname.startsWith("/api/webhooks/")
+  ) {
     return NextResponse.next();
   }
 

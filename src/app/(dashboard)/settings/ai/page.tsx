@@ -17,9 +17,10 @@ import {
   type AiProviderName,
 } from "@/lib/ai/provider-registry";
 import { ModelSelect } from "@/components/settings/model-select";
-import { CheckCircle2, Pencil, Star, Trash2, X } from "lucide-react";
+import { CheckCircle2, Pencil, Share2, Star, Trash2, User, X } from "lucide-react";
 import { StarRating } from "@/components/ui/star-rating";
 import type { StarScore } from "@/lib/ai/model-rating";
+import { ShareDialog } from "@/components/settings/share-dialog";
 
 interface ProviderRatingInfo {
   overallStars: StarScore;
@@ -42,6 +43,10 @@ interface Provider {
   isDefault: boolean;
   isEnabled: boolean;
   rating?: ProviderRatingInfo | null;
+  ownership?: "owned" | "shared";
+  canEdit?: boolean;
+  isOwner?: boolean;
+  owner?: { id: string; name: string | null; email: string };
 }
 
 interface ProviderForm {
@@ -76,6 +81,7 @@ export default function AiSettingsPage() {
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [shareTarget, setShareTarget] = useState<Provider | null>(null);
 
   const selectedMeta = useMemo(
     () => getProviderMeta(form.provider),
@@ -142,6 +148,10 @@ export default function AiSettingsPage() {
   }
 
   function startEdit(p: Provider) {
+    if (p.canEdit === false) {
+      setError("Bạn chỉ được xem/dùng provider này, không có quyền chỉnh sửa");
+      return;
+    }
     const providerId = p.provider as AiProviderName;
     setEditingId(p.id);
     setForm({
@@ -305,10 +315,23 @@ export default function AiSettingsPage() {
 
   return (
     <div className="space-y-6">
+      <ShareDialog
+        open={!!shareTarget}
+        onClose={() => setShareTarget(null)}
+        resourceType="ai_provider"
+        resourceId={shareTarget?.id ?? ""}
+        resourceLabel={
+          shareTarget
+            ? `${getLabel(shareTarget.provider)} · ${shareTarget.model ?? "default"}`
+            : ""
+        }
+      />
+
       <div>
         <h1 className="text-3xl font-bold text-foreground">AI Providers</h1>
         <p className="mt-1 text-muted">
-          Hỗ trợ OpenAI, Claude, Gemini, DeepSeek, Groq, Cerebras, OpenRouter, Ollama, Cursor...
+          Hỗ trợ OpenAI, Claude, Gemini, DeepSeek, Groq, Cerebras, OpenRouter, Ollama, Cursor.
+          Có thể share provider với người khác.
         </p>
       </div>
 
@@ -474,6 +497,14 @@ export default function AiSettingsPage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium">{getLabel(p.provider)}</p>
                         <p className="truncate text-sm text-muted">{p.model ?? "default model"}</p>
+                        {p.owner && (
+                          <p className="mt-1 flex items-center gap-1 text-xs text-muted">
+                            <User className="h-3 w-3 shrink-0" />
+                            {p.ownership === "shared"
+                              ? `Gốc từ: ${p.owner.name || p.owner.email}`
+                              : `Của bạn`}
+                          </p>
+                        )}
                         {p.rating && (
                           <div className="mt-2 space-y-0.5">
                             <StarRating
@@ -491,6 +522,7 @@ export default function AiSettingsPage() {
                         )}
                       </div>
                       <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                        {p.ownership === "shared" && <Badge>Shared</Badge>}
                         {p.isDefault && <Badge variant="violet">Default</Badge>}
                         {!p.isEnabled && <Badge variant="high">Tắt</Badge>}
                         <Badge>Priority {p.priority}</Badge>
@@ -511,20 +543,34 @@ export default function AiSettingsPage() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {!p.isDefault && p.isEnabled && (
+                      {p.isOwner !== false && !p.isDefault && p.isEnabled && (
                         <Button variant="secondary" size="sm" onClick={() => setReviewDefault(p.id)}>
                           <Star className="h-3.5 w-3.5" />
                           Dùng khi review
                         </Button>
                       )}
-                      <Button variant="outline" size="sm" onClick={() => startEdit(p)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                        Sửa
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => deleteProvider(p.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Xóa
-                      </Button>
+                      {p.canEdit !== false && (
+                        <Button variant="outline" size="sm" onClick={() => startEdit(p)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                          Sửa
+                        </Button>
+                      )}
+                      {p.isOwner !== false && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShareTarget(p)}
+                          >
+                            <Share2 className="h-3.5 w-3.5" />
+                            Share
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => deleteProvider(p.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Xóa
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}

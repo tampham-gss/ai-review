@@ -193,9 +193,11 @@ export async function runValidateJob(
     });
     assertNotCancelled(signal);
 
-    const connection = await prisma.gitlabConnection.findFirst({
-      where: { id: body.connectionId!, userId },
-    });
+    const { getAccessibleGitlabConnection } = await import("@/lib/shares");
+    const connection = await getAccessibleGitlabConnection(
+      userId,
+      body.connectionId!,
+    );
     if (!connection) {
       throw new Error("GitLab connection not found");
     }
@@ -444,9 +446,24 @@ async function continueValidateJob(
     data: { status: "validating" },
   });
 
+  const { listSharedResourceIds } = await import("@/lib/shares");
+  const sharedConnIds = await listSharedResourceIds(
+    userId,
+    "gitlab_connection",
+  );
   const connection =
     (await findGitlabConnectionForHost(userId, session.gitlabHost)) ??
-    (await prisma.gitlabConnection.findFirst({ where: { userId } }));
+    (await prisma.gitlabConnection.findFirst({
+      where: {
+        OR: [
+          { userId },
+          ...(sharedConnIds.length > 0
+            ? [{ id: { in: sharedConnIds } }]
+            : []),
+        ],
+      },
+      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+    }));
   if (!connection) {
     throw new Error("Không tìm thấy GitLab connection cho phiên này");
   }

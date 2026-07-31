@@ -1,11 +1,11 @@
 import { requireUser } from "@/lib/api-helpers";
-import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import {
   findLatestAuthoredMergeRequest,
   listMergeRequests,
   listProjects,
 } from "@/lib/gitlab/client";
+import { getAccessibleGitlabConnection } from "@/lib/shares";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -26,9 +26,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "connectionId required" }, { status: 400 });
   }
 
-  const connection = await prisma.gitlabConnection.findFirst({
-    where: { id: connectionId, userId: authResult.userId },
-  });
+  const connection = await getAccessibleGitlabConnection(
+    authResult.userId,
+    connectionId,
+  );
   if (!connection) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }

@@ -38,6 +38,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           });
 
           if (!user?.passwordHash) return null;
+          if (user.isDisabled) return null;
 
           const valid = await bcrypt.compare(
             String(credentials.password),
@@ -45,7 +46,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           );
           if (!valid) return null;
 
-          return { id: user.id, email: user.email, name: user.name };
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role === "admin" ? "admin" : "user",
+          };
         } catch (error) {
           // Thường gặp khi DATABASE_URL sai / Neon unreachable trên Vercel
           console.error("[auth] credentials authorize failed:", error);
@@ -67,9 +73,51 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     ...authConfig.callbacks,
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session }) {
       if (user?.id) {
         token.userId = user.id;
+        // Luôn đọc role từ DB khi login — tránh mất field custom từ Credentials
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: user.id },
+            select: { role: true, isDisabled: true, name: true, email: true },
+          });
+          if (!dbUser || dbUser.isDisabled) {
+            token.userId = undefined;
+            token.role = undefined;
+          } else {
+            token.role = dbUser.role === "admin" ? "admin" : "user";
+            token.name = dbUser.name;
+            token.email = dbUser.email;
+          }
+        } catch {
+          token.role = user.role === "admin" ? "admin" : "user";
+        }
+      }
+
+      if (trigger === "update" && token.userId) {
+        if (session?.name !== undefined) token.name = session.name;
+        if (session?.email !== undefined) token.email = session.email;
+      }
+
+      // Refresh role/disabled từ DB trên các request sau
+      if (token.userId && !user) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.userId as string },
+            select: { role: true, isDisabled: true, name: true, email: true },
+          });
+          if (!dbUser || dbUser.isDisabled) {
+            token.userId = undefined;
+            token.role = undefined;
+          } else {
+            token.role = dbUser.role === "admin" ? "admin" : "user";
+            token.name = dbUser.name;
+            token.email = dbUser.email;
+          }
+        } catch {
+          // giữ token cũ nếu DB lỗi tạm
+        }
       }
 
       if (account?.provider === "gitlab" && account.access_token && user?.email) {
@@ -78,16 +126,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             where: { email: user.email.toLowerCase() },
           });
 
+          if (existing?.isDisabled) {
+            token.userId = undefined;
+            token.role = undefined;
+            return token;
+          }
+
           const dbUser =
             existing ??
             (await prisma.user.create({
               data: {
                 email: user.email.toLowerCase(),
                 name: user.name ?? user.email,
+                role: "user",
               },
             }));
 
           token.userId = dbUser.id;
+          token.role = dbUser.role === "admin" ? "admin" : "user";
 
           const gitlabHost = "https://gitlab.com";
           const existingConn = await prisma.gitlabConnection.findFirst({
@@ -124,6 +180,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user && token.userId) {
         session.user.id = token.userId as string;
+        session.user.role = token.role === "admin" ? "admin" : "user";
       }
       return session;
     },

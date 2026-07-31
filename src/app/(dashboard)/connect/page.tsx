@@ -7,13 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toaster";
+import { ShareDialog } from "@/components/settings/share-dialog";
 import {
   CheckCircle2,
   ExternalLink,
   Pencil,
   PlugZap,
+  Share2,
   Star,
   Trash2,
+  User,
   X,
 } from "lucide-react";
 
@@ -22,6 +25,10 @@ interface Connection {
   name: string;
   host: string;
   isDefault: boolean;
+  ownership?: "owned" | "shared";
+  canEdit?: boolean;
+  isOwner?: boolean;
+  owner?: { id: string; name: string | null; email: string };
 }
 
 export default function ConnectPage() {
@@ -35,6 +42,9 @@ export default function ConnectPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [actionId, setActionId] = useState("");
   const [makeDefault, setMakeDefault] = useState(false);
+  const [shareTarget, setShareTarget] = useState<Connection | null>(null);
+
+  const ownedCount = connections.filter((c) => c.isOwner !== false).length;
 
   async function loadConnections() {
     const res = await fetch("/api/gitlab/connections");
@@ -57,6 +67,10 @@ export default function ConnectPage() {
   }
 
   function startEdit(c: Connection) {
+    if (c.canEdit === false) {
+      toast.error("Bạn không có quyền chỉnh sửa kết nối này");
+      return;
+    }
     setEditingId(c.id);
     setName(c.name);
     setHost(c.host);
@@ -103,9 +117,7 @@ export default function ConnectPage() {
           name,
           host,
           token,
-          ...(makeDefault || connections.length === 0
-            ? { isDefault: true }
-            : {}),
+          ...(makeDefault || ownedCount === 0 ? { isDefault: true } : {}),
         }),
       });
       const data = await res.json();
@@ -198,11 +210,21 @@ export default function ConnectPage() {
 
   return (
     <div className="space-y-6">
+      <ShareDialog
+        open={!!shareTarget}
+        onClose={() => setShareTarget(null)}
+        resourceType="gitlab_connection"
+        resourceId={shareTarget?.id ?? ""}
+        resourceLabel={
+          shareTarget ? `${shareTarget.name} — ${shareTarget.host}` : ""
+        }
+      />
+
       <div>
         <h1 className="text-3xl font-bold text-foreground">Kết nối GitLab</h1>
         <p className="mt-1 text-muted">
-          Thêm nhiều GitLab (PAT / OAuth), chọn một kết nối mặc định để dùng khi
-          review.
+          Thêm nhiều GitLab (PAT / OAuth), share với đồng nghiệp, chọn mặc định để
+          dùng khi review.
         </p>
       </div>
 
@@ -281,13 +303,13 @@ export default function ConnectPage() {
                 <label className="flex items-center gap-2 text-sm text-muted">
                   <input
                     type="checkbox"
-                    checked={makeDefault || connections.length === 0}
-                    disabled={connections.length === 0}
+                    checked={makeDefault || ownedCount === 0}
+                    disabled={ownedCount === 0}
                     onChange={(e) => setMakeDefault(e.target.checked)}
                     className="rounded border-border"
                   />
                   Đặt làm GitLab mặc định
-                  {connections.length === 0 ? " (kết nối đầu tiên)" : ""}
+                  {ownedCount === 0 ? " (kết nối đầu tiên)" : ""}
                 </label>
               )}
               {message && (
@@ -320,7 +342,7 @@ export default function ConnectPage() {
               {connections.length > 0 ? ` (${connections.length})` : ""}
             </CardTitle>
             <CardDescription>
-              Hiển thị tất cả kết nối — nhấn Mặc định để chọn GitLab dùng ưu tiên
+              Kết nối được share sẽ hiện chủ sở hữu gốc
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -349,8 +371,17 @@ export default function ConnectPage() {
                           <span className="truncate">{c.host}</span>
                           <ExternalLink className="h-3 w-3 shrink-0" />
                         </a>
+                        {c.owner && (
+                          <p className="mt-1 flex items-center gap-1 text-xs text-muted">
+                            <User className="h-3 w-3 shrink-0" />
+                            {c.ownership === "shared"
+                              ? `Gốc từ: ${c.owner.name || c.owner.email}`
+                              : "Của bạn"}
+                          </p>
+                        )}
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                        {c.ownership === "shared" && <Badge>Shared</Badge>}
                         {c.isDefault && <Badge variant="violet">Mặc định</Badge>}
                         <CheckCircle2 className="h-5 w-5 text-emerald-400" />
                       </div>
@@ -368,38 +399,52 @@ export default function ConnectPage() {
                         )}
                         Test
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => startEdit(c)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        Sửa
-                      </Button>
-                      {!c.isDefault && (
+                      {c.canEdit !== false && (
                         <Button
                           size="sm"
-                          variant="secondary"
-                          onClick={() => setDefault(c.id)}
-                          loading={actionId === `default-${c.id}`}
+                          variant="outline"
+                          onClick={() => startEdit(c)}
                         >
-                          {actionId !== `default-${c.id}` && (
-                            <Star className="h-3.5 w-3.5" />
-                          )}
-                          Mặc định
+                          <Pencil className="h-3.5 w-3.5" />
+                          Sửa
                         </Button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => deleteConnection(c.id)}
-                        loading={actionId === `delete-${c.id}`}
-                      >
-                        {actionId !== `delete-${c.id}` && (
-                          <Trash2 className="h-3.5 w-3.5" />
-                        )}
-                        Xóa
-                      </Button>
+                      {c.isOwner !== false && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShareTarget(c)}
+                          >
+                            <Share2 className="h-3.5 w-3.5" />
+                            Share
+                          </Button>
+                          {!c.isDefault && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setDefault(c.id)}
+                              loading={actionId === `default-${c.id}`}
+                            >
+                              {actionId !== `default-${c.id}` && (
+                                <Star className="h-3.5 w-3.5" />
+                              )}
+                              Mặc định
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => deleteConnection(c.id)}
+                            loading={actionId === `delete-${c.id}`}
+                          >
+                            {actionId !== `delete-${c.id}` && (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                            Xóa
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}

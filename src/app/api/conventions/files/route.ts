@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
+import { assertResourceAccess } from "@/lib/shares";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -21,11 +22,17 @@ export async function POST(request: Request) {
 
   const body = fileSchema.parse(await request.json());
 
-  const category = await prisma.conventionCategory.findFirst({
-    where: { id: body.categoryId, userId: authResult.userId },
-  });
-  if (!category) {
-    return NextResponse.json({ error: "Category not found" }, { status: 404 });
+  const access = await assertResourceAccess(
+    authResult.userId,
+    "convention_category",
+    body.categoryId,
+    { needEdit: true },
+  );
+  if (!access.ok) {
+    return NextResponse.json(
+      { error: access.status === 403 ? "Không có quyền chỉnh sửa" : "Category not found" },
+      { status: access.status },
+    );
   }
 
   const file = await prisma.conventionFile.create({
@@ -53,10 +60,24 @@ export async function PATCH(request: Request) {
     }
 
     const existing = await prisma.conventionFile.findFirst({
-      where: { id: body.id, category: { userId: authResult.userId } },
+      where: { id: body.id },
+      select: { id: true, categoryId: true },
     });
     if (!existing) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
+    }
+
+    const access = await assertResourceAccess(
+      authResult.userId,
+      "convention_category",
+      existing.categoryId,
+      { needEdit: true },
+    );
+    if (!access.ok) {
+      return NextResponse.json(
+        { error: access.status === 403 ? "Không có quyền chỉnh sửa" : "File not found" },
+        { status: access.status },
+      );
     }
 
     const file = await prisma.conventionFile.update({
@@ -93,10 +114,24 @@ export async function DELETE(request: Request) {
   }
 
   const file = await prisma.conventionFile.findFirst({
-    where: { id: fileId, category: { userId: authResult.userId } },
+    where: { id: fileId },
+    select: { id: true, categoryId: true },
   });
   if (!file) {
     return NextResponse.json({ error: "File not found" }, { status: 404 });
+  }
+
+  const access = await assertResourceAccess(
+    authResult.userId,
+    "convention_category",
+    file.categoryId,
+    { needEdit: true },
+  );
+  if (!access.ok) {
+    return NextResponse.json(
+      { error: access.status === 403 ? "Không có quyền chỉnh sửa" : "File not found" },
+      { status: access.status },
+    );
   }
 
   await prisma.conventionFile.delete({ where: { id: fileId } });

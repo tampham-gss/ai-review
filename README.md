@@ -78,8 +78,11 @@ src/
 
 ## Roadmap
 
+- [x] Webhook GitLab auto validate (comment đúng lệnh, vd: `Agent reject review`)
+- [x] Dashboard MR cần xử lý
+- [x] Báo cáo chất lượng (project / reviewer / tuần)
+- [x] Team share conventions / AI / GitLab (peer)
 - [ ] Re-run chỉ comment chưa có kết quả / chưa resolved mới
 - [ ] Preview reply trước khi push (modal)
 - [ ] Parser MR-Agent comment nâng cao
 - [ ] Vercel Blob cho ZIP lớn
-- [ ] Team workspace & shared conventions

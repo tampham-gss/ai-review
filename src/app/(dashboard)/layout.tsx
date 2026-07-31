@@ -12,7 +12,7 @@ export default async function DashboardLayout({
   if (!session?.user) redirect("/login");
 
   return (
-    <AppShell>
+    <AppShell isAdmin={session.user.role === "admin"}>
       {children}
       <Toaster />
     </AppShell>

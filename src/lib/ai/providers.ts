@@ -364,12 +364,29 @@ export async function testAiConnection(params: {
 }
 
 export async function getUserAiProviders(userId: string): Promise<AiProviderConfig[]> {
-  const providers = await prisma.aiProvider.findMany({
-    where: { userId, isEnabled: true },
-    orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
-  });
+  const { listSharedResourceIds } = await import("@/lib/shares");
+  const peerSharedIds = await listSharedResourceIds(userId, "ai_provider");
 
-  return providers.map((p) => ({
+  const [providers, shared] = await Promise.all([
+    prisma.aiProvider.findMany({
+      where: {
+        isEnabled: true,
+        OR: [
+          { userId },
+          ...(peerSharedIds.length > 0
+            ? [{ id: { in: peerSharedIds } }]
+            : []),
+        ],
+      },
+      orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.sharedAiProvider.findMany({
+      where: { isEnabled: true },
+      orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
+    }),
+  ]);
+
+  const personal = providers.map((p) => ({
     id: p.id,
     provider: p.provider as AiProviderName,
     apiKey: decrypt(p.apiKeyEncrypted),
@@ -379,15 +396,54 @@ export async function getUserAiProviders(userId: string): Promise<AiProviderConf
     tokensUsed: p.tokensUsed,
     tokenLimit: p.tokenLimit,
     isEnabled: p.isEnabled,
-    priority: p.priority,
+    // Peer-shared: priority hơi thấp hơn owned cùng priority
+    priority: p.userId === userId ? p.priority : p.priority + 50,
   }));
+
+  const sharedMapped = shared.map((p) => ({
+    id: p.id,
+    provider: p.provider as AiProviderName,
+    apiKey: decrypt(p.apiKeyEncrypted),
+    baseUrl:
+      p.baseUrl ?? getDefaultBaseUrl(p.provider as AiProviderName) ?? null,
+    model: p.model ?? getDefaultModel(p.provider as AiProviderName),
+    tokensUsed: p.tokensUsed,
+    tokenLimit: p.tokenLimit,
+    isEnabled: p.isEnabled,
+    // Shared ưu tiên thấp hơn personal trừ khi priority cao
+    priority: 1000 + (100 - p.priority),
+  }));
+
+  return [...personal, ...sharedMapped];
 }
 
 export async function recordTokenUsage(
   providerId: string,
   tokens: number,
   action: "validate" | "fix" = "validate",
+  userId?: string,
 ) {
+  const shared = await prisma.sharedAiProvider.findUnique({
+    where: { id: providerId },
+  });
+  if (shared) {
+    await prisma.sharedAiProvider.update({
+      where: { id: providerId },
+      data: { tokensUsed: { increment: tokens } },
+    });
+    if (tokens > 0 && userId) {
+      await prisma.tokenUsageLog.create({
+        data: {
+          userId,
+          providerId: `shared:${providerId}`,
+          tokens,
+          action,
+        },
+      });
+    }
+    return;
+  }
+
   const provider = await prisma.aiProvider.update({
     where: { id: providerId },
     data: { tokensUsed: { increment: tokens } },
@@ -820,7 +876,7 @@ ${params.fileContent}
     onRetry: params.onRetry,
     timeoutMs: params.timeoutMs,
   });
-  await recordTokenUsage(provider.id, tokens, "validate");
+  await recordTokenUsage(provider.id, tokens, "validate", params.userId);
   const parsed = parseJson<ValidationAiResult>(text);
   const result = sanitizeValidationReply(parsed, params.fileContent);
   return { result, providerId: provider.id };
@@ -858,7 +914,7 @@ ${params.fileContent}
 `;
 
   const { text, tokens } = await callAi(provider, FIX_SYSTEM, userPrompt);
-  await recordTokenUsage(provider.id, tokens, "fix");
+  await recordTokenUsage(provider.id, tokens, "fix", params.userId);
   const result = parseJson<FixAiResult>(text);
   return { result, providerId: provider.id };
 }

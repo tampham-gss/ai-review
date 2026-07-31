@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/api-helpers";
-import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { testGitlabConnection } from "@/lib/gitlab/client";
+import { getAccessibleGitlabConnection } from "@/lib/shares";
 import { NextResponse } from "next/server";
 
 export async function POST(
@@ -12,9 +12,10 @@ export async function POST(
   if ("error" in authResult) return authResult.error;
 
   const { id } = await params;
-  const connection = await prisma.gitlabConnection.findFirst({
-    where: { id, userId: authResult.userId },
-  });
+  const connection = await getAccessibleGitlabConnection(
+    authResult.userId,
+    id,
+  );
 
   if (!connection) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });

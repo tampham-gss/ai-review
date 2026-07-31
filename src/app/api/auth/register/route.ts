@@ -11,6 +11,15 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const { getSystemSettings } = await import("@/lib/admin");
+    const settings = await getSystemSettings();
+    if (!settings.registrationOpen) {
+      return NextResponse.json(
+        { error: "Đăng ký đang bị tắt bởi admin" },
+        { status: 403 },
+      );
+    }
+
     const body = await request.json();
     const data = schema.parse(body);
 
@@ -27,6 +36,7 @@ export async function POST(request: Request) {
         email: data.email.toLowerCase(),
         passwordHash,
         name: data.name ?? data.email.split("@")[0],
+        role: "user",
       },
     });
 

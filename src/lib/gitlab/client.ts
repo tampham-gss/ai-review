@@ -120,6 +120,96 @@ export async function findLatestAuthoredMergeRequest(
   };
 }
 
+/** Danh sách MR opened do user PAT tạo (mới cập nhật trước). */
+export async function listOpenAuthoredMergeRequests(
+  host: string,
+  token: string,
+  limit = 12,
+) {
+  const api = createGitlabClient(host, token);
+  const user = await api.Users.showCurrentUser();
+
+  const mrs = await api.MergeRequests.all({
+    state: "opened",
+    scope: "created_by_me",
+    authorId: user.id,
+    orderBy: "updated_at",
+    sort: "desc",
+    perPage: limit,
+  });
+
+  const results: Array<{
+    projectId: string;
+    projectPath: string;
+    projectName: string;
+    iid: number;
+    title: string;
+    sourceBranch: string;
+    targetBranch: string;
+    webUrl: string;
+    updatedAt: string;
+  }> = [];
+
+  for (const mr of mrs) {
+    const projectId = String(mr.project_id);
+    let pathWithNamespace =
+      (mr as { references?: { full?: string } }).references?.full?.split(
+        "!",
+      )[0] ?? "";
+    let projectName = "";
+    try {
+      const project = await api.Projects.show(projectId);
+      pathWithNamespace =
+        (project as { path_with_namespace?: string }).path_with_namespace ??
+        pathWithNamespace;
+      projectName = (project as { name?: string }).name ?? "";
+    } catch {
+      // keep fallback
+    }
+
+    results.push({
+      projectId,
+      projectPath: pathWithNamespace.replace(/!$/, "").trim() || `project/${projectId}`,
+      projectName,
+      iid: mr.iid,
+      title: mr.title ?? "",
+      sourceBranch: mr.source_branch,
+      targetBranch: mr.target_branch,
+      webUrl: mr.web_url ?? "",
+      updatedAt: mr.updated_at ?? new Date().toISOString(),
+    });
+  }
+
+  return results;
+}
+
+/** Đếm discussion chưa resolve trên MR (nhẹ hơn getUnresolvedComments). */
+export async function countUnresolvedDiscussions(
+  host: string,
+  token: string,
+  projectId: string,
+  mrIid: number,
+) {
+  const api = createGitlabClient(host, token);
+  const discussions = await api.MergeRequestDiscussions.all(projectId, mrIid);
+  let count = 0;
+  for (const discussion of discussions) {
+    if (discussion.resolved) continue;
+    const notes = discussion.notes ?? [];
+    const resolvableNotes = notes.filter(
+      (n) =>
+        !n.system &&
+        (n.resolvable === true ||
+          n.type === "DiffNote" ||
+          n.type === "DiscussionNote" ||
+          !!n.position),
+    );
+    if (resolvableNotes.length === 0) continue;
+    if (resolvableNotes.some((n) => n.resolved !== true)) count += 1;
+  }
+  return count;
+}
+
 export async function listBranches(host: string, token: string, projectId: string) {
   const api = createGitlabClient(host, token);
   const branches = await api.Branches.all(projectId, { perPage: 100 });

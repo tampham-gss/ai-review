@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toaster";
-import { Eye, FileText, User, X } from "lucide-react";
+import { ShareDialog } from "@/components/settings/share-dialog";
+import { Eye, FileText, Share2, User, X } from "lucide-react";
 
 interface ConventionFile {
   id: string;
@@ -21,7 +22,10 @@ interface Category {
   name: string;
   level: number;
   files: ConventionFile[];
-  user?: { id: string; name: string | null; email: string };
+  ownership?: "owned" | "shared";
+  canEdit?: boolean;
+  isOwner?: boolean;
+  owner?: { id: string; name: string | null; email: string };
 }
 
 export default function ConventionsPage() {
@@ -36,9 +40,13 @@ export default function ConventionsPage() {
   const [addingFile, setAddingFile] = useState(false);
   const [deletingFileId, setDeletingFileId] = useState("");
   const [previewFile, setPreviewFile] = useState<ConventionFile | null>(null);
+  const [previewCanEdit, setPreviewCanEdit] = useState(true);
   const [editName, setEditName] = useState("");
   const [editContent, setEditContent] = useState("");
   const [savingPreview, setSavingPreview] = useState(false);
+  const [shareTarget, setShareTarget] = useState<Category | null>(null);
+
+  const editableCategories = categories.filter((c) => c.canEdit !== false);
 
   async function load() {
     try {
@@ -60,8 +68,9 @@ export default function ConventionsPage() {
     load();
   }, []);
 
-  function openPreview(file: ConventionFile) {
+  function openPreview(file: ConventionFile, canEdit: boolean) {
     setPreviewFile(file);
+    setPreviewCanEdit(canEdit);
     setEditName(file.name);
     setEditContent(file.content);
   }
@@ -125,7 +134,7 @@ export default function ConventionsPage() {
   }
 
   async function savePreview() {
-    if (!previewFile) return;
+    if (!previewFile || !previewCanEdit) return;
     if (!editName.trim() || !editContent.trim()) {
       toast.error("Tên file và nội dung không được trống");
       return;
@@ -180,6 +189,16 @@ export default function ConventionsPage() {
 
   return (
     <div className="space-y-6">
+      <ShareDialog
+        open={!!shareTarget}
+        onClose={() => setShareTarget(null)}
+        resourceType="convention_category"
+        resourceId={shareTarget?.id ?? ""}
+        resourceLabel={
+          shareTarget ? `L${shareTarget.level} — ${shareTarget.name}` : ""
+        }
+      />
+
       {previewFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <Card className="flex max-h-[90vh] w-full max-w-3xl flex-col border-violet-500/30 shadow-2xl">
@@ -187,7 +206,9 @@ export default function ConventionsPage() {
               <div className="min-w-0">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <FileText className="h-5 w-5 shrink-0 text-cyan-700 dark:text-cyan-400" />
-                  <span className="truncate">Preview / Sửa convention</span>
+                  <span className="truncate">
+                    {previewCanEdit ? "Preview / Sửa convention" : "Xem convention"}
+                  </span>
                 </CardTitle>
                 <CardDescription className="truncate">
                   {previewFile.name}
@@ -202,20 +223,24 @@ export default function ConventionsPage() {
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 placeholder="tên-file.md"
+                disabled={!previewCanEdit}
               />
               <Textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 className="min-h-0 flex-1 font-mono text-xs"
                 style={{ minHeight: "320px" }}
+                readOnly={!previewCanEdit}
               />
               <div className="flex flex-wrap justify-end gap-2 shrink-0">
                 <Button variant="secondary" onClick={closePreview}>
                   Đóng
                 </Button>
-                <Button onClick={savePreview} loading={savingPreview}>
-                  {savingPreview ? "Đang lưu..." : "Lưu thay đổi"}
-                </Button>
+                {previewCanEdit && (
+                  <Button onClick={savePreview} loading={savingPreview}>
+                    {savingPreview ? "Đang lưu..." : "Lưu thay đổi"}
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -225,7 +250,8 @@ export default function ConventionsPage() {
       <div>
         <h1 className="text-3xl font-bold text-foreground">Convention Rules</h1>
         <p className="mt-1 text-muted">
-          Upload file .md theo level — chọn nhiều category khi validate.
+          Upload file .md theo level — chọn nhiều category khi validate. Có thể
+          share category với người khác.
         </p>
       </div>
 
@@ -260,10 +286,11 @@ export default function ConventionsPage() {
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
             >
-              <option value="">Chọn category</option>
-              {categories.map((c) => (
+              <option value="">Chọn category (có quyền sửa)</option>
+              {editableCategories.map((c) => (
                 <option key={c.id} value={c.id}>
                   L{c.level} — {c.name}
+                  {c.ownership === "shared" ? " (shared)" : ""}
                 </option>
               ))}
             </select>
@@ -289,7 +316,7 @@ export default function ConventionsPage() {
         <CardHeader>
           <CardTitle>Danh sách convention</CardTitle>
           <CardDescription>
-            Nhấn tên file để xem / sửa nội dung. Danh sách dài cuộn trong khung.
+            Nhấn tên file để xem / sửa. Category được share hiển thị chủ sở hữu gốc.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -297,58 +324,84 @@ export default function ConventionsPage() {
             <p className="text-sm text-muted">Chưa có convention nào.</p>
           ) : (
             <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-              {categories.map((c) => (
-                <div key={c.id} className="rounded-xl border border-border p-4">
-                  <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
-                    <Badge variant="violet" className="shrink-0">
-                      Level {c.level}
-                    </Badge>
-                    <h3 className="min-w-0 truncate font-medium">{c.name}</h3>
-                    <span className="shrink-0 text-sm text-muted-soft">{c.files.length} files</span>
-                  </div>
-                  {c.user && (
-                    <p className="mb-3 flex min-w-0 items-center gap-1.5 text-xs text-muted">
-                      <User className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">
-                        Tạo bởi: {c.user.name || c.user.email}
+              {categories.map((c) => {
+                const canEdit = c.canEdit !== false;
+                return (
+                  <div key={c.id} className="rounded-xl border border-border p-4">
+                    <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
+                      <Badge variant="violet" className="shrink-0">
+                        Level {c.level}
+                      </Badge>
+                      <h3 className="min-w-0 truncate font-medium">{c.name}</h3>
+                      <span className="shrink-0 text-sm text-muted-soft">
+                        {c.files.length} files
                       </span>
-                    </p>
-                  )}
-                  <div className="max-h-48 space-y-2 overflow-y-auto">
-                    {c.files.length === 0 ? (
-                      <p className="text-xs text-muted-soft">Chưa có file.</p>
-                    ) : (
-                      c.files.map((f) => (
-                        <div
-                          key={f.id}
-                          className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2 text-sm"
+                      {c.ownership === "shared" && (
+                        <Badge>Shared</Badge>
+                      )}
+                      {c.ownership === "shared" && !canEdit && (
+                        <Badge variant="high">Chỉ xem</Badge>
+                      )}
+                      {c.isOwner !== false && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="ml-auto shrink-0"
+                          onClick={() => setShareTarget(c)}
                         >
-                          <button
-                            type="button"
-                            onClick={() => openPreview(f)}
-                            className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-90"
-                            title="Xem / sửa nội dung"
-                          >
-                            <Eye className="h-3.5 w-3.5 shrink-0 text-muted-soft" />
-                            <span className="min-w-0 truncate font-mono text-cyan-700 dark:text-cyan-300">
-                              {f.name}
-                            </span>
-                          </button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() => deleteFile(f.id)}
-                            loading={deletingFileId === f.id}
-                          >
-                            Xóa
-                          </Button>
-                        </div>
-                      ))
+                          <Share2 className="h-3.5 w-3.5" />
+                          Share
+                        </Button>
+                      )}
+                    </div>
+                    {c.owner && (
+                      <p className="mb-3 flex min-w-0 items-center gap-1.5 text-xs text-muted">
+                        <User className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">
+                          {c.ownership === "shared"
+                            ? `Gốc từ: ${c.owner.name || c.owner.email}`
+                            : `Của bạn: ${c.owner.name || c.owner.email}`}
+                        </span>
+                      </p>
                     )}
+                    <div className="max-h-48 space-y-2 overflow-y-auto">
+                      {c.files.length === 0 ? (
+                        <p className="text-xs text-muted-soft">Chưa có file.</p>
+                      ) : (
+                        c.files.map((f) => (
+                          <div
+                            key={f.id}
+                            className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2 text-sm"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => openPreview(f, canEdit)}
+                              className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-90"
+                              title={canEdit ? "Xem / sửa nội dung" : "Xem nội dung"}
+                            >
+                              <Eye className="h-3.5 w-3.5 shrink-0 text-muted-soft" />
+                              <span className="min-w-0 truncate font-mono text-cyan-700 dark:text-cyan-300">
+                                {f.name}
+                              </span>
+                            </button>
+                            {canEdit && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                className="shrink-0"
+                                onClick={() => deleteFile(f.id)}
+                                loading={deletingFileId === f.id}
+                              >
+                                Xóa
+                              </Button>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

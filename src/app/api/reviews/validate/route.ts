@@ -16,6 +16,10 @@ export async function POST(request: Request) {
   const authResult = await requireUser();
   if ("error" in authResult) return authResult.error;
 
+  const { assertUserCanOperate } = await import("@/lib/api-helpers");
+  const blocked = await assertUserCanOperate(authResult.userId, authResult.role);
+  if (blocked) return blocked;
+
   const json = await request.json();
   const stream = json?.stream === true;
 

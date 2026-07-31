@@ -17,6 +17,8 @@ export interface ReviewAiProvider {
   isDefault: boolean;
   isEnabled: boolean;
   remaining: number | null;
+  ownership?: "owned" | "shared";
+  owner?: { id: string; name: string | null; email: string };
   rating?: {
     overallStars: StarScore;
     label: string;
@@ -172,6 +174,11 @@ export function AiProviderPicker({
               {p.isDefault && (
                 <span className="mt-1 inline-block text-[10px] text-cyan-700 dark:text-cyan-400">
                   Mặc định
+                </span>
+              )}
+              {p.ownership === "shared" && (
+                <span className="mt-1 block truncate text-[10px] text-muted-soft">
+                  Từ {p.owner?.name || p.owner?.email || "shared"}
                 </span>
               )}
             </button>
