@@ -50,23 +50,25 @@ export async function POST(request: Request) {
     );
   }
 
-  if (result.ignored) {
+  if (result.ignored || !("accepted" in result) || !result.accepted) {
     return NextResponse.json({
       ok: true,
       ignored: true,
-      reason: result.reason,
+      reason: "reason" in result ? result.reason : "Ignored",
       sessionId: "sessionId" in result ? result.sessionId : undefined,
     });
   }
 
+  const job = {
+    userId: result.userId,
+    configId: result.configId,
+    body: result.body,
+  };
+
   // Chạy validate nền sau khi trả 200 cho GitLab
   after(async () => {
     try {
-      await executeAcceptedWebhookValidate({
-        userId: result.userId,
-        configId: result.configId,
-        body: result.body,
-      });
+      await executeAcceptedWebhookValidate(job);
     } catch (error) {
       console.error("[webhook/gitlab] auto validate failed:", error);
     }
@@ -76,7 +78,7 @@ export async function POST(request: Request) {
     ok: true,
     accepted: true,
     message: "Auto validate queued",
-    projectPath: result.body.projectPath,
-    mrIid: result.body.mrIid,
+    projectPath: job.body.projectPath,
+    mrIid: job.body.mrIid,
   });
 }
