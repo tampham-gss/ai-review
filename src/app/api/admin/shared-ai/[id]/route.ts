@@ -9,7 +9,7 @@ const patchSchema = z.object({
   name: z.string().min(1).optional(),
   provider: z.string().min(1).optional(),
   apiKey: z.string().min(8).optional(),
-  baseUrl: z.string().url().nullable().optional(),
+  baseUrl: z.string().url().nullable().optional().or(z.literal("").transform(() => null)),
   model: z.string().nullable().optional(),
   isEnabled: z.boolean().optional(),
   priority: z.number().int().optional(),
