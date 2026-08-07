@@ -23,9 +23,12 @@ type AttentionItem = {
     | "failed"
     | "open_mr";
   projectPath: string;
+  projectId?: string;
   mrIid: number;
   mrTitle: string | null;
   sourceBranch?: string | null;
+  gitlabHost?: string;
+  connectionId?: string;
   sessionId?: string;
   invalidUnpushed?: number;
   validUnpushed?: number;
@@ -34,6 +37,22 @@ type AttentionItem = {
   webUrl?: string | null;
   reason: string;
 };
+
+function buildReviewHref(item: AttentionItem): string {
+  if (item.sessionId) return `/reviews/${item.sessionId}`;
+
+  const params = new URLSearchParams();
+  if (item.connectionId) params.set("connectionId", item.connectionId);
+  if (item.gitlabHost) params.set("gitlabHost", item.gitlabHost);
+  if (item.projectId) params.set("projectId", item.projectId);
+  if (item.projectPath) params.set("projectPath", item.projectPath);
+  params.set("mrIid", String(item.mrIid));
+  if (item.sourceBranch) params.set("sourceBranch", item.sourceBranch);
+  if (item.mrTitle) params.set("mrTitle", item.mrTitle);
+
+  const qs = params.toString();
+  return qs ? `/reviews?${qs}` : "/reviews";
+}
 
 const kindBadge: Record<
   AttentionItem["kind"],
@@ -186,9 +205,7 @@ export function AttentionPanel() {
           <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
             {items.map((item) => {
               const badge = kindBadge[item.kind];
-              const href = item.sessionId
-                ? `/reviews/${item.sessionId}`
-                : "/reviews";
+              const href = buildReviewHref(item);
               return (
                 <div
                   key={item.id}

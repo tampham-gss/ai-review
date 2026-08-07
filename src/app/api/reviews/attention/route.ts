@@ -27,6 +27,7 @@ export type AttentionItem = {
   mrTitle: string | null;
   sourceBranch?: string | null;
   gitlabHost?: string;
+  connectionId?: string;
   sessionId?: string;
   status?: string;
   invalidUnpushed?: number;
@@ -221,7 +222,7 @@ async function loadOpenMrs(
   const connection = await prisma.gitlabConnection.findFirst({
     where: { userId },
     orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
-    select: { host: true, tokenEncrypted: true },
+    select: { id: true, host: true, tokenEncrypted: true },
   });
   if (!connection) return [];
 
@@ -248,6 +249,7 @@ async function loadOpenMrs(
         mrTitle: mr.title,
         sourceBranch: mr.sourceBranch,
         gitlabHost: connection.host,
+        connectionId: connection.id,
         unresolvedCount: null,
         updatedAt: mr.updatedAt,
         webUrl: mr.webUrl,

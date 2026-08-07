@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import {
 } from "@/components/reviews/validate-progress";
 import { AiProviderPicker } from "@/components/reviews/ai-provider-picker";
 import { AlertTriangle, GitPullRequest, History, Upload, Zap } from "lucide-react";
+import { normalizeGitlabHost } from "@/lib/utils";
 
 interface Connection {
   id: string;
@@ -47,8 +48,13 @@ interface Category {
   owner?: { id: string; name: string | null; email: string };
 }
 
-export default function NewReviewPage() {
+function hostsMatch(a: string, b: string) {
+  return normalizeGitlabHost(a).toLowerCase() === normalizeGitlabHost(b).toLowerCase();
+}
+
+function NewReviewPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const abortRef = useRef<AbortController | null>(null);
   const stopSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,6 +80,7 @@ export default function NewReviewPage() {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(initialProgressState);
   const [showProgress, setShowProgress] = useState(false);
+  const prefillAppliedRef = useRef(false);
 
   useEffect(() => {
     async function init() {
@@ -99,6 +106,98 @@ export default function NewReviewPage() {
     }
     init();
   }, []);
+
+  useEffect(() => {
+    if (loading || prefillAppliedRef.current) return;
+
+    const projectIdParam = searchParams.get("projectId");
+    const mrIidParam = searchParams.get("mrIid");
+    if (!projectIdParam || !mrIidParam) return;
+
+    prefillAppliedRef.current = true;
+
+    const projectId = projectIdParam;
+    const mrIidRaw = mrIidParam;
+
+    async function applyPrefill() {
+      const connectionIdParam = searchParams.get("connectionId");
+      const gitlabHostParam = searchParams.get("gitlabHost");
+      const projectPathParam = searchParams.get("projectPath") ?? "";
+      const mrTitleParam = searchParams.get("mrTitle") ?? "";
+      const sourceBranchParam = searchParams.get("sourceBranch") ?? "";
+      const mrIid = Number(mrIidRaw);
+
+      if (!Number.isFinite(mrIid) || mrIid <= 0) {
+        toast.error("MR không hợp lệ từ dashboard");
+        return;
+      }
+
+      let connId = connectionIdParam ?? "";
+      if (!connId && gitlabHostParam) {
+        const match = connections.find((c) => hostsMatch(c.host, gitlabHostParam));
+        connId = match?.id ?? "";
+      }
+      if (!connId) {
+        const preferred = connections.find((c) => c.isDefault) ?? connections[0];
+        connId = preferred?.id ?? "";
+      }
+      if (!connId) {
+        toast.error("Không tìm thấy kết nối GitLab phù hợp");
+        return;
+      }
+
+      setConnectionId(connId);
+
+      try {
+        const projRes = await fetch(`/api/gitlab/projects?connectionId=${encodeURIComponent(connId)}`);
+        const projData = await projRes.json();
+        if (!projRes.ok) {
+          toast.error(typeof projData.error === "string" ? projData.error : "Tải projects thất bại");
+          return;
+        }
+
+        const projectsList: Project[] = projData.projects ?? [];
+        setProjects(projectsList);
+
+        const matchedProject = projectsList.find((p) => p.id === projectId);
+        const resolvedPath =
+          projectPathParam ||
+          matchedProject?.pathWithNamespace ||
+          "";
+
+        setProjectId(projectId);
+        setProjectPath(resolvedPath);
+
+        const mrRes = await fetch(
+          `/api/gitlab/merge-requests?connectionId=${encodeURIComponent(connId)}&projectId=${encodeURIComponent(projectId)}`,
+        );
+        const mrData = await mrRes.json();
+        if (!mrRes.ok) {
+          toast.error(typeof mrData.error === "string" ? mrData.error : "Tải MR thất bại");
+          return;
+        }
+
+        const mrsList: MR[] = mrData.mergeRequests ?? [];
+        setMrs(mrsList);
+
+        const mr = mrsList.find((m) => m.iid === mrIid);
+        setMrIid(mrIid);
+        setMrTitle(mr?.title ?? mrTitleParam);
+        setSourceBranch(mr?.sourceBranch ?? sourceBranchParam);
+        setSourceType("gitlab");
+        setZipBase64(null);
+
+        toast.success(
+          `Đã áp dụng MR !${mrIid}${resolvedPath ? ` — ${resolvedPath}` : ""}`,
+        );
+        router.replace("/reviews", { scroll: false });
+      } catch {
+        toast.error("Không áp dụng được MR từ dashboard");
+      }
+    }
+
+    void applyPrefill();
+  }, [loading, searchParams, connections, router]);
 
   async function loadProjects() {
     if (!connectionId) return;
@@ -523,5 +622,13 @@ export default function NewReviewPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function NewReviewPage() {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <NewReviewPageContent />
+    </Suspense>
   );
 }
